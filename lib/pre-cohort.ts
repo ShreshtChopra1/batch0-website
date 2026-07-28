@@ -2,9 +2,10 @@
 // Pre-cohort lockdown — shared, pure logic.
 //
 // An accepted (or already-enrolled) student whose cohort hasn't started yet
-// only gets the personal pages: home, application, kickoff, resources
-// (pre-cohort section), billing, referrals, settings. Everything else under
-// /dashboard is off-limits until kickoff.
+// only gets the personal pages: home, application, billing, referrals,
+// settings — plus kickoff and resources (pre-cohort section) once they've
+// paid to enroll. Everything else under /dashboard is off-limits until
+// kickoff.
 //
 // This module is imported by the Edge middleware, server components, AND
 // client components (sidebar / mobile nav) — keep it dependency-free and
@@ -16,9 +17,9 @@ import type { ApplicationStatus } from "@/lib/types";
 
 /**
  * Application statuses that count as "passed review". Single home for the
- * list — lib/access.ts, the middleware gate, and the resources page all
- * import it (the RLS policy in migration 0042 mirrors it in SQL; change
- * them together).
+ * list — lib/access.ts and the middleware gate import it. (Since migration
+ * 0046, RLS no longer keys off these statuses for resources / flows /
+ * receipts — those are enrolled-only.)
  */
 export const ACCEPTED_STATUSES: readonly ApplicationStatus[] = [
   "accepted",
@@ -34,7 +35,11 @@ export function isAcceptedStatus(
   );
 }
 
-/** Nav hrefs (exact) that stay visible in the sidebar pre-cohort. */
+/**
+ * Nav hrefs (exact) that stay visible in the sidebar pre-cohort. Kickoff
+ * and Resources additionally require enrollment — filterStudentNavItem
+ * and the pages themselves enforce that on top of this set.
+ */
 export const PRE_COHORT_ALLOWED_HREFS = new Set<string>([
   "/dashboard",
   "/dashboard/application",

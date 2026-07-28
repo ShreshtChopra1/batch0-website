@@ -130,22 +130,25 @@ export type StudentNavContext = {
 /**
  * The one visibility predicate for student nav items — desktop sidebar and
  * mobile drawer both call this so the two can never drift. Pre-cohort
- * lockdown wins first (only the personal pages survive, including
- * Resources, which is otherwise enrolled-only); then per-feature flags;
- * then the pre-enrollment hiding of cohort-only routes.
+ * lockdown wins first (only the personal pages survive); then per-feature
+ * flags; then the hiding of enrolled-only routes — which applies inside
+ * the pre-cohort window too, so an accepted-but-unpaid student sees
+ * neither Kickoff nor Resources.
  */
 export function filterStudentNavItem(
   item: NavItem,
   ctx: StudentNavContext,
 ): boolean {
   if (ctx.preCohort && !PRE_COHORT_ALLOWED_HREFS.has(item.href)) return false;
-  // Kickoff only exists during the pre-cohort window — once the cohort
-  // starts (or before acceptance) the page redirects home, so hide it.
-  if (item.href === "/dashboard/kickoff") return ctx.preCohort;
+  // Kickoff only exists during the pre-cohort window, and only once the
+  // seat is paid for — the page redirects home for everyone else.
+  if (item.href === "/dashboard/kickoff") {
+    return ctx.preCohort && ctx.enrolled;
+  }
   if (item.href === "/dashboard/ai") return ctx.aiAccess;
   if (item.href === "/dashboard/community") return ctx.discordEnabled;
   if (item.href === "/dashboard/referrals") return ctx.referralsEnabled;
-  if (!ctx.enrolled && !ctx.preCohort && ENROLLED_ONLY_HREFS.has(item.href)) {
+  if (!ctx.enrolled && ENROLLED_ONLY_HREFS.has(item.href)) {
     return false;
   }
   return true;

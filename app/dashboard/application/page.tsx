@@ -119,7 +119,7 @@ export default async function ApplicationPage({
             {(priceCents / 100).toFixed(0)} to lock in your seat.{" "}
             {started
               ? "Course access unlocks immediately after."
-              : `Pre-cohort resources unlock right away; the full program opens${
+              : `Paying unlocks kickoff details and the pre-cohort resources right away; the full program opens${
                   startLabel ? ` on ${startLabel}` : " at kickoff"
                 }.`}
           </p>

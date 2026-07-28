@@ -8,7 +8,6 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCircle,
-  CreditCard,
   FolderArchive,
   MessagesSquare,
   PlayCircle,
@@ -23,11 +22,11 @@ export default async function KickoffPage() {
   const profile = await getProfile();
   const access = await getStudentAccess(profile?.role ?? "student");
 
-  // Kickoff is a pre-cohort page. The middleware whitelists it during
-  // lockdown, but anyone can type the URL — once the cohort has started
-  // (or before an application passes review) there's nothing here, so
-  // bounce home.
-  if (!access.preCohort) redirect("/dashboard");
+  // Kickoff is a pre-cohort, enrolled-only page. The middleware whitelists
+  // the path during lockdown, but anyone can type the URL — once the cohort
+  // has started, or before the student has paid to enroll, there's nothing
+  // here, so bounce home.
+  if (!access.preCohort || !access.enrolled) redirect("/dashboard");
 
   const startDate = fmtDateOnly(access.cohortStartsOn);
   const daysLeft = access.cohortStartsOn
@@ -39,10 +38,6 @@ export default async function KickoffPage() {
         ),
       )
     : null;
-  // Accepted but seat not locked in yet — tuition leads the checklist.
-  const needsTuition =
-    !access.enrolled && access.applicationStatus === "accepted";
-
   return (
     <div className="mx-auto max-w-4xl">
       <div className="border-b border-line pb-8">
@@ -103,13 +98,6 @@ export default async function KickoffPage() {
             Before kickoff
           </h2>
           <ul className="mt-4 space-y-2">
-            {needsTuition && (
-              <ChecklistLink
-                href="/dashboard/application"
-                icon={CreditCard}
-                label="Pay tuition to lock in your seat"
-              />
-            )}
             <ChecklistLink
               href="/dashboard/resources"
               icon={FolderArchive}

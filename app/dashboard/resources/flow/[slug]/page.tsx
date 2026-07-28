@@ -3,7 +3,6 @@ import { notFound, redirect } from "next/navigation";
 import { requireUser, getProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getStudentAccess } from "@/lib/access";
-import { isAcceptedStatus } from "@/lib/pre-cohort";
 import { renderMarkdown } from "@/lib/blog";
 import type { FlowStepData, StepConfig } from "@/lib/flows";
 import { FlowPlayer, type CompiledStep } from "./flow-player";
@@ -18,12 +17,10 @@ export default async function FlowPage({
   const user = await requireUser();
   const profile = await getProfile();
   const access = await getStudentAccess(profile?.role ?? "student");
-  const accepted = isAcceptedStatus(access.applicationStatus);
-  const fullAccess = access.enrolled && !access.preCohort;
-  // Same audience as the resources hub: accepted or enrolled (admins count
-  // as enrolled via getStudentAccess, so they can preview — RLS additionally
+  // Same audience as the resources hub: enrolled only (admins count as
+  // enrolled via getStudentAccess, so they can preview — RLS additionally
   // lets staff open drafts).
-  if (!fullAccess && !accepted) redirect("/dashboard/resources");
+  if (!access.enrolled) redirect("/dashboard/resources");
 
   const supabase = createClient();
   const { data: flow } = await supabase

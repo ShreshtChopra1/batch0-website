@@ -15,7 +15,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { getStudentAccess } from "@/lib/access";
-import { fmtDateOnly, isAcceptedStatus } from "@/lib/pre-cohort";
+import { fmtDateOnly } from "@/lib/pre-cohort";
 import { FLOW_STAGES } from "@/lib/flows";
 import { LockedFeature } from "@/components/dashboard/locked-feature";
 
@@ -37,19 +37,16 @@ export default async function DashboardResourcesPage() {
   const user = await requireUser();
   const profile = await getProfile();
   const access = await getStudentAccess(profile?.role ?? "student");
-  const accepted = isAcceptedStatus(access.applicationStatus);
 
-  // Three views:
+  // Enrolled-only, in two views:
   //  - full: enrolled with a started cohort (admins report enrolled from
   //    getStudentAccess, so they preview this) — everything, with
   //    pre-cohort items grouped in their own section up top.
-  //  - pre-cohort section only: accepted (or enrolled pre-kickoff).
-  //    Acceptance alone keeps this section even after the cohort starts —
-  //    an accepted-but-unpaid student must not watch materials vanish on
-  //    kickoff day (the 0042 RLS policy has no date condition either).
-  //  - locked: everyone else.
+  //  - pre-cohort section only: enrolled but the cohort hasn't started.
+  //  - locked: everyone else. Acceptance alone opens nothing — the seat
+  //    has to be paid for first (RLS in migration 0046 matches).
   const fullAccess = access.enrolled && !access.preCohort;
-  if (!fullAccess && !accepted) {
+  if (!access.enrolled) {
     return (
       <LockedFeature
         title="Resources"
@@ -127,11 +124,9 @@ export default async function DashboardResourcesPage() {
       <p className="mt-1 text-sm text-ink-soft">
         {fullAccess
           ? "Templates, decks, guides, and tools curated by the batch0 team."
-          : access.preCohort
-            ? `A head start before ${access.cohortName ?? "your cohort"} kicks off${
-                startDate ? ` on ${startDate}` : ""
-              }. Everything else unlocks when the cohort begins.`
-            : "Materials for accepted students. The full library unlocks when you enroll."}
+          : `A head start before ${access.cohortName ?? "your cohort"} kicks off${
+              startDate ? ` on ${startDate}` : ""
+            }. Everything else unlocks when the cohort begins.`}
       </p>
 
       {/* Before One — the interactive pre-cohort system. Flows are

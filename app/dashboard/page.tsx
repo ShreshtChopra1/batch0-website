@@ -10,11 +10,7 @@ import { FounderPassCard } from "./founder-pass-card";
 import { getPassForUser } from "@/lib/founder-pass";
 import { ChargePayButton } from "@/components/charge-pay-button";
 import { getStudentAccess, type StudentAccess } from "@/lib/access";
-import {
-  fmtDateOnly,
-  isAcceptedStatus,
-  PRE_COHORT_ALLOWED_HREFS,
-} from "@/lib/pre-cohort";
+import { fmtDateOnly, PRE_COHORT_ALLOWED_HREFS } from "@/lib/pre-cohort";
 import type { Role } from "@/lib/types";
 import { env } from "@/lib/env";
 import {
@@ -292,15 +288,13 @@ export default async function DashboardHome() {
               { href: "/dashboard/settings", label: "Settings" },
             ]
               .filter((l) => {
-                // Kickoff only exists during the pre-cohort window.
-                if (l.href === "/dashboard/kickoff") return preCohort;
-                // Resources stay locked until the application passes
-                // review — don't dangle a dead-end link before that.
-                if (
-                  l.href === "/dashboard/resources" &&
-                  !access.enrolled &&
-                  !isAcceptedStatus(access.applicationStatus)
-                ) {
+                // Kickoff only exists pre-cohort, and only once enrolled.
+                if (l.href === "/dashboard/kickoff") {
+                  return preCohort && access.enrolled;
+                }
+                // Resources are enrolled-only — don't dangle a dead-end
+                // link before the seat is paid for.
+                if (l.href === "/dashboard/resources" && !access.enrolled) {
                   return false;
                 }
                 // Pre-cohort: only link to pages the middleware allows —
@@ -385,7 +379,7 @@ function appStatus(
         lede: (price) =>
           `You're in. Lock in your seat with the one-time ${price} tuition` +
           `${startDate ? ` — the cohort starts ${startDate}` : ""}. ` +
-          "Pre-cohort resources are already open for you.",
+          "Paying unlocks kickoff details and the pre-cohort resources.",
         cta: {
           href: "/dashboard/application",
           label: (price) => `Pay ${price} to enroll`,

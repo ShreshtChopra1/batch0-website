@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { requireUser, getProfile } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStudentAccess } from "@/lib/access";
-import { isAcceptedStatus } from "@/lib/pre-cohort";
 import {
   earnedBadges,
   receiptKindLabel,
@@ -21,9 +20,8 @@ export default async function BuildReceiptsPage() {
   const profile = await getProfile();
   const role = profile?.role ?? "student";
   const access = await getStudentAccess(role);
-  const accepted = isAcceptedStatus(access.applicationStatus);
-  const fullAccess = access.enrolled && !access.preCohort;
-  if (!fullAccess && !accepted) redirect("/dashboard/resources");
+  // Enrolled only — same gate as the resources hub this page hangs off.
+  if (!access.enrolled) redirect("/dashboard/resources");
 
   const isAdmin = role === "admin";
   const admin = createAdminClient();

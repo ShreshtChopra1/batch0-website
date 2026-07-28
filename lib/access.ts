@@ -44,9 +44,10 @@ export type StudentAccess = {
   role: Role;
   /**
    * Accepted (or enrolled) but the cohort hasn't started yet. Pre-cohort
-   * students only get the personal pages + pre-cohort resources — the
-   * middleware enforces it, the nav and pages mirror it. Kept in lockstep
-   * with the check in lib/supabase/middleware.ts via lib/pre-cohort.ts.
+   * students only get the personal pages — plus kickoff and pre-cohort
+   * resources once enrolled. The middleware enforces it, the nav and pages
+   * mirror it. Kept in lockstep with the check in
+   * lib/supabase/middleware.ts via lib/pre-cohort.ts.
    */
   preCohort: boolean;
   /** Start date (YYYY-MM-DD) of the soonest not-yet-started cohort, when pre-cohort. */
