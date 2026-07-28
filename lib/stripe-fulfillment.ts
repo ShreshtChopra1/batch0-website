@@ -55,6 +55,14 @@ export type FulfillmentResult = {
   amountCents: number | null;
   /** Human-readable line item ("Fine: late check-in", a cohort name). */
   description: string | null;
+  /**
+   * Why the ledger row couldn't be written, when it couldn't. Normally
+   * null. A payment whose student or application has since been deleted
+   * can't satisfy the foreign keys on `payments` — that's legitimate, but
+   * it must be reported rather than swallowed, or the admin Payments page
+   * silently omits real money.
+   */
+  ledgerError?: string | null;
 };
 
 const UNKNOWN: FulfillmentResult = {
@@ -239,7 +247,7 @@ async function fulfillEnrollment(
       .eq("id", applicationId);
   }
 
-  await recordEnrollmentPayment(admin, {
+  const ledgerError = await recordEnrollmentPayment(admin, {
     existingId: ledger?.id ?? null,
     sessionId: session.id,
     userId,
@@ -287,13 +295,17 @@ async function fulfillEnrollment(
     });
   }
 
-  return { ...base, receiptUrl };
+  return { ...base, receiptUrl, ledgerError };
 }
 
 /**
  * Move the ledger row for this checkout to succeeded. The row is normally
  * created when the session is created; insert one if it's missing so the
  * student's billing history is complete even when that write was lost.
+ *
+ * Returns null on success, or a reason string. The caller surfaces it —
+ * an insert that fails here means real money is missing from the admin
+ * Payments page, which is not something to discover by accident.
  */
 async function recordEnrollmentPayment(
   admin: ReturnType<typeof createAdminClient>,
@@ -309,9 +321,9 @@ async function recordEnrollmentPayment(
     paymentIntentId: string | null;
     receiptUrl: string | null;
   },
-) {
+): Promise<string | null> {
   if (row.existingId) {
-    await admin
+    const { error } = await admin
       .from("payments")
       .update({
         status: "succeeded",
@@ -319,10 +331,14 @@ async function recordEnrollmentPayment(
         stripe_receipt_url: row.receiptUrl,
       })
       .eq("id", row.existingId);
-    return;
+    if (error) {
+      console.error("[stripe] ledger update failed", row.sessionId, error);
+      return `ledger update failed: ${error.message}`;
+    }
+    return null;
   }
 
-  await admin.from("payments").insert({
+  const { error } = await admin.from("payments").insert({
     user_id: row.userId,
     application_id: row.applicationId,
     cohort_id: row.cohortId,
@@ -333,6 +349,29 @@ async function recordEnrollmentPayment(
     currency: row.currency,
     status: "succeeded",
   });
+  if (!error) return null;
+
+  // 23503 = foreign key violation. The student's profile or their
+  // application was deleted after they paid, so there is nowhere valid to
+  // hang the row. Retry without the application reference (it's nullable)
+  // before giving up — losing the link is better than losing the money.
+  if ((error as any).code === "23503" && row.applicationId) {
+    const { error: retryErr } = await admin.from("payments").insert({
+      user_id: row.userId,
+      application_id: null,
+      cohort_id: row.cohortId,
+      stripe_session_id: row.sessionId,
+      stripe_payment_intent_id: row.paymentIntentId,
+      stripe_receipt_url: row.receiptUrl,
+      amount_cents: row.amountCents,
+      currency: row.currency,
+      status: "succeeded",
+    });
+    if (!retryErr) return null;
+  }
+
+  console.error("[stripe] ledger insert failed", row.sessionId, error);
+  return `no ledger row for ${row.sessionId}: ${error.message}`;
 }
 
 async function lookupCohortName(cohortId: string): Promise<string | null> {

@@ -205,4 +205,7 @@ function tally(summary: ReconcileSummary, result: FulfillmentResult) {
   else if (result.state === "expired" || result.state === "failed") {
     summary.closed += 1;
   }
+  // A payment that couldn't be written to the ledger is money the admin
+  // Payments page won't show. Surface it instead of counting a clean run.
+  if (result.ledgerError) summary.errors.push(result.ledgerError);
 }
