@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { Card, StatusBadge } from "@/components/ui/card";
 import { LocalTime } from "@/components/ui/local-time";
 import { RefundButton } from "./refund-button";
+import { SyncStripeButton } from "./sync-button";
 
 export const metadata = { title: "Payments · Admin" };
 
@@ -90,12 +91,15 @@ export default async function AdminPaymentsPage({
             Stripe activity, revenue, and per-cohort breakdown.
           </p>
         </div>
-        <a
-          href="/api/admin/export/payments"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-wash px-3 py-1.5 text-xs font-medium text-ink-soft hover:border-ink/30 hover:bg-wash"
-        >
-          Export CSV
-        </a>
+        <div className="flex items-start gap-2">
+          <SyncStripeButton />
+          <a
+            href="/api/admin/export/payments"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-wash px-3 py-1.5 text-xs font-medium text-ink-soft hover:border-ink/30 hover:bg-wash"
+          >
+            Export CSV
+          </a>
+        </div>
       </div>
 
       {/* Stat tiles */}

@@ -1,4 +1,5 @@
 import { env } from "@/lib/env";
+import { fmtDateOnly } from "@/lib/pre-cohort";
 
 /** Shared HTML wrapper for all transactional emails. */
 function layout(args: {
@@ -167,15 +168,29 @@ export const Templates = {
     }),
   }),
 
-  paymentReceipt: (args: { name?: string | null; amountCents: number; cohortName: string }) => ({
+  // `startsOn` is set only when the cohort hasn't kicked off yet — before
+  // then the course is still locked, so the receipt points at kickoff
+  // instead of a page the student would just get bounced from.
+  paymentReceipt: (args: {
+    name?: string | null;
+    amountCents: number;
+    cohortName: string;
+    startsOn?: string | null;
+  }) => ({
     subject: "Payment received — you're enrolled",
     html: layout({
       preheader: "You're enrolled in batch0.",
       body: `
         <h1 style="margin:0 0 12px 0;font-size:22px;color:#ffbb00">Enrolled</h1>
-        <p>We received your payment of <strong>$${(args.amountCents / 100).toFixed(2)}</strong> for ${escape(args.cohortName)}. Your course access is unlocked. Welcome aboard${args.name ? `, ${escape(args.name)}` : ""}.</p>
+        <p>We received your payment of <strong>$${(args.amountCents / 100).toFixed(2)}</strong> for ${escape(args.cohortName)}. ${
+          args.startsOn
+            ? `Your seat is locked in. Kickoff is <strong>${escape(fmtDateOnly(args.startsOn) ?? "coming soon")}</strong> — until then your kickoff page, Discord, your team page, and the pre-cohort resources are open.`
+            : "Your course access is unlocked."
+        } Welcome aboard${args.name ? `, ${escape(args.name)}` : ""}.</p>
       `,
-      cta: { url: `${env.siteUrl}/dashboard/course`, label: "Open course" },
+      cta: args.startsOn
+        ? { url: `${env.siteUrl}/dashboard/kickoff`, label: "See kickoff details" }
+        : { url: `${env.siteUrl}/dashboard/course`, label: "Open course" },
     }),
   }),
 

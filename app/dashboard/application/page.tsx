@@ -17,6 +17,8 @@ import {
   type Rebuild,
 } from "@/lib/founder-pass-perks";
 import { PayButton } from "./pay-button";
+import { PaymentResult } from "@/components/payment-result";
+import { syncCheckoutSession } from "@/lib/stripe-fulfillment";
 import { TrackSubmitted } from "./track-submitted";
 import { RebuildForm } from "./rebuild-form";
 import { fmtDateOnly } from "@/lib/pre-cohort";
@@ -27,10 +29,24 @@ export const metadata = { title: "Application · batch0" };
 export default async function ApplicationPage({
   searchParams,
 }: {
-  searchParams: { submitted?: string; canceled?: string };
+  searchParams: {
+    submitted?: string;
+    canceled?: string;
+    paid?: string;
+    session_id?: string;
+  };
 }) {
   const user = await requireUser();
   const supabase = createClient();
+
+  // Landing back from Stripe Checkout. Settle the session against Stripe
+  // BEFORE reading the application row: the webhook is asynchronous and
+  // usually loses this race, and a student who just paid must never be
+  // shown the "pay now" card again. Both paths run the same idempotent
+  // fulfillment, so whichever arrives second is a no-op.
+  const payment = searchParams.session_id
+    ? await syncCheckoutSession(searchParams.session_id, user.id)
+    : null;
 
   const { data: app } = await supabase
     .from("applications")
@@ -96,6 +112,8 @@ export default async function ApplicationPage({
         <StatusBadge status={app.status} />
       </div>
 
+      <PaymentResult result={payment} />
+
       {searchParams.submitted && (
         <div className="mt-5 rounded-lg border border-phosphor/30 bg-phosphor/5 p-4 text-sm">
           <TrackSubmitted />
@@ -119,7 +137,7 @@ export default async function ApplicationPage({
             {(priceCents / 100).toFixed(0)} to lock in your seat.{" "}
             {started
               ? "Course access unlocks immediately after."
-              : `Paying unlocks kickoff details and the pre-cohort resources right away; the full program opens${
+              : `Paying unlocks kickoff details, your team page, and the pre-cohort resources right away; the full program opens${
                   startLabel ? ` on ${startLabel}` : " at kickoff"
                 }.`}
           </p>

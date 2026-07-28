@@ -69,10 +69,33 @@ The CLI prints `Ready! Your webhook signing secret is whsec_xxxxx`. Copy that in
 For production, create a webhook in the Stripe dashboard pointed at `https://yourdomain.com/api/stripe/webhook`. Subscribe to:
 
 - `checkout.session.completed`
+- `checkout.session.async_payment_succeeded`
+- `checkout.session.async_payment_failed`
+- `checkout.session.expired`
 - `payment_intent.payment_failed`
 - `charge.refunded`
 
 Then copy the production "Signing secret" into your hosting platform's env vars.
+
+### Payment state is reconciled three ways
+
+The webhook is the primary path, but it is never the only one — a student
+must never be shown "pay now" for money they already sent.
+
+1. **Webhook** — Stripe's authoritative delivery.
+2. **On return from Checkout** — the success URL carries the session id, and
+   `/dashboard/application` and `/dashboard/billing` settle it against
+   Stripe before rendering. This wins the redirect race almost every time.
+3. **Reconciliation** — `/api/cron/stripe-reconcile` runs daily over a
+   14-day window, and **Admin → Payments → Sync from Stripe** replays the
+   whole account history on demand. Use the button after changing webhook
+   config, after an outage, or to backfill transactions that predate the
+   webhook.
+
+All three run the same idempotent fulfillment in `lib/stripe-fulfillment.ts`,
+so whichever arrives first wins and the rest are no-ops. Emails and
+notifications fire only on the real transition into paid; reconciliation
+runs silently.
 
 ## 6. Run the dev server
 

@@ -142,7 +142,11 @@ export async function POST(req: Request) {
           user_id: user.id,
         },
       },
-      success_url: `${origin}/dashboard/application?paid=1`,
+      // The session id rides back on the redirect so the landing page can
+      // confirm the payment against Stripe directly instead of waiting on
+      // the webhook — the student is normally back before Stripe's POST
+      // lands, and must never be shown "pay now" again after paying.
+      success_url: `${origin}/dashboard/application?paid=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/dashboard/application?canceled=1`,
     });
 
