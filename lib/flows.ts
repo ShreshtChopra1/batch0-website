@@ -156,6 +156,22 @@ export function nextStepKeyByOrder(
   return sorted[i + 1].step_key;
 }
 
+/**
+ * Previous step by sort order. The player prefers the real path it took
+ * (branches make order a poor guess), but a student resuming a saved flow
+ * has no in-memory history — this is what keeps Back working for them
+ * instead of leaving a dead button.
+ */
+export function prevStepKeyByOrder(
+  steps: StepRef[],
+  current: string,
+): string | null {
+  const sorted = [...steps].sort((a, b) => a.sort_order - b.sort_order);
+  const i = sorted.findIndex((s) => s.step_key === current);
+  if (i <= 0) return null;
+  return sorted[i - 1].step_key;
+}
+
 /** Does the recorded answer satisfy an outcome block's condition? */
 export function outcomeBlockMatches(
   block: OutcomeBlock,

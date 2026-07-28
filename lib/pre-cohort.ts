@@ -59,6 +59,12 @@ export const PRE_COHORT_ALLOWED_HREFS = new Set<string>([
 // but must stay reachable — the fine middleware forces users there.
 const PRE_COHORT_ALLOWED_PREFIXES = [
   "/dashboard/application",
+  // The acceptance and enrollment moments. Both are reached exactly when
+  // the student is pre-cohort, so the lockdown would otherwise bounce a
+  // student straight out of the page confirming they just paid. Neither
+  // is a nav item, so they stay out of PRE_COHORT_ALLOWED_HREFS.
+  "/dashboard/accepted",
+  "/dashboard/enrolled",
   "/dashboard/kickoff",
   "/dashboard/resources",
   "/dashboard/community",

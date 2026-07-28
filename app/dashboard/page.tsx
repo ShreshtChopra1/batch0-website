@@ -383,7 +383,7 @@ function appStatus(
           "Paying unlocks kickoff details, your team page, and the " +
           "pre-cohort resources.",
         cta: {
-          href: "/dashboard/application",
+          href: "/dashboard/accepted",
           label: (price) => `Pay ${price} to enroll`,
         },
       };
@@ -432,7 +432,7 @@ function appStatus(
         lede: (price) =>
           `You're in. Lock in your seat with the one-time ${price} tuition.`,
         cta: {
-          href: "/dashboard/application",
+          href: "/dashboard/accepted",
           label: (price) => `Pay ${price} to enroll`,
         },
       };

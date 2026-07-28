@@ -113,7 +113,7 @@ export const Templates = {
         <h1 style="margin:0 0 12px 0;font-size:22px;color:#ffbb00">You're in.</h1>
         <p>Welcome to <strong>${escape(args.cohortName)}</strong>${args.name ? `, ${escape(args.name)}` : ""}. Your one-time enrollment fee is <strong>$${(args.priceCents / 100).toFixed(0)}</strong>. Pay below to lock in your seat.</p>
       `,
-      cta: { url: `${env.siteUrl}/dashboard/application`, label: "Pay & enroll" },
+      cta: { url: `${env.siteUrl}/dashboard/accepted`, label: "Pay & enroll" },
     }),
   }),
 

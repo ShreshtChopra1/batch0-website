@@ -173,7 +173,7 @@ export async function decideApplication(
         type: "application_accepted",
         title: "You're in",
         body: `Welcome to ${cohort?.name ?? "batch0"}. Pay to lock in your seat.`,
-        link: "/dashboard/application",
+        link: "/dashboard/accepted",
       });
     } else if (decision === "waitlisted") {
       const t = Templates.applicationWaitlisted({

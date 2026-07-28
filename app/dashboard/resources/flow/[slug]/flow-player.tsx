@@ -11,6 +11,7 @@ import {
   type OutcomeBlock,
   firstStepKey,
   nextStepKeyByOrder,
+  prevStepKeyByOrder,
   outcomeBlockMatches,
   renderTemplate,
   resolveAnswer,
@@ -183,12 +184,28 @@ export function FlowPlayer({
     router.push("/dashboard/resources");
   }
 
+  /**
+   * The step Back returns to: the real path taken when we have it (branches
+   * make sort order a bad guess), otherwise the previous step in order.
+   * The fallback is what makes Back work at all for a student resuming a
+   * saved flow — `history` only lives in memory, so on resume it's empty
+   * and the button used to be dead on a step they'd clearly walked to.
+   */
+  const backKey =
+    history[history.length - 1] ?? prevStepKeyByOrder(ordered, step.step_key);
+
   function goBack() {
-    const prev = history[history.length - 1];
-    if (!prev) return;
+    if (!backKey || !byKey.has(backKey)) return;
     setHistory((h) => h.slice(0, -1));
-    setCurrentKey(prev);
-    loadDraftFor(prev, answers);
+    setCurrentKey(backKey);
+    loadDraftFor(backKey, answers);
+    // Persist the move. Without this the saved position stayed on the step
+    // being left, so a reload silently threw the student forward again —
+    // Back appeared to do nothing at all.
+    persist(answers, backKey, completed);
+    // goTo scrolls; Back has to as well, or on a long step the header
+    // never comes back into view and the click reads as ignored.
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function restart() {
@@ -493,7 +510,7 @@ export function FlowPlayer({
           <Button
             variant="ghost"
             onClick={goBack}
-            disabled={history.length === 0}
+            disabled={!backKey}
           >
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
@@ -517,7 +534,7 @@ export function FlowPlayer({
       )}
       {step.kind === "outcome" && (
         <div className="mt-8 border-t border-line pt-5">
-          <Button variant="ghost" onClick={goBack} disabled={history.length === 0}>
+          <Button variant="ghost" onClick={goBack} disabled={!backKey}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
         </div>
