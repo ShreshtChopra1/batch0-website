@@ -27,17 +27,25 @@ async function getEnrollment(userId: string) {
     .select("cohort_id, cohort:cohorts(starts_on, status)")
     .eq("user_id", userId)
     .order("enrolled_at", { ascending: false });
-  // Only enrollments whose cohort has kicked off count. The team UI is
-  // unreachable during pre-cohort lockdown, but server actions resolve by
-  // action ID against any path — so the lockdown has to hold here too.
+  // Teams can be formed before kickoff — an enrolled student shouldn't have
+  // to wait for day one to line up co-founders. A started cohort still wins
+  // when the student is tied to several (an alum enrolling again keeps
+  // building in the live one); otherwise fall back to the soonest upcoming
+  // cohort so a pre-cohort team lands in the right batch.
   const today = todayISO();
-  for (const row of data ?? []) {
+  const rows = (data ?? []).flatMap((row) => {
     const cohort = Array.isArray(row.cohort) ? row.cohort[0] : row.cohort;
-    if (row.cohort_id && cohort && cohortHasStarted(cohort, today)) {
-      return row.cohort_id as string;
-    }
-  }
-  return null;
+    return row.cohort_id && cohort
+      ? [{ cohortId: row.cohort_id as string, cohort }]
+      : [];
+  });
+  const started = rows.find((r) => cohortHasStarted(r.cohort, today));
+  if (started) return started.cohortId;
+  const upcoming = rows
+    .filter((r) => !!r.cohort.starts_on)
+    .sort((a, b) => (a.cohort.starts_on! < b.cohort.starts_on! ? -1 : 1))[0];
+  // A dateless cohort ("upcoming", no start date yet) is still a real seat.
+  return (upcoming ?? rows[0])?.cohortId ?? null;
 }
 
 async function assertTeamMember(userId: string, teamId: string) {

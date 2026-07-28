@@ -11,6 +11,7 @@ import {
   FolderArchive,
   MessagesSquare,
   PlayCircle,
+  Rocket,
   Settings,
   Sparkles,
 } from "lucide-react";
@@ -49,8 +50,8 @@ export default async function KickoffPage() {
         </h1>
         <p className="mt-3 max-w-xl text-[15px] text-ink-soft leading-relaxed">
           Kickoff is day one of the cohort — the moment the full program
-          unlocks. Until then this page and your pre-cohort resources are
-          your launchpad.
+          unlocks. Until then this page, Discord, your team, and the
+          pre-cohort resources are your launchpad.
         </p>
         {daysLeft !== null && (
           <p className="mt-5 inline-flex items-center gap-2 rounded-full border border-phosphor/30 bg-phosphor/[0.08] px-4 py-1.5 text-sm font-medium text-phosphor-ink">
@@ -78,7 +79,7 @@ export default async function KickoffPage() {
             <InfoRow
               icon={MessagesSquare}
               title="Your cohort"
-              body="Community, announcements, and team pages go live — you'll meet the other founders you're building alongside."
+              body="Announcements, events, and the shared cohort surfaces go live. Discord and your team page are already open — start there."
             />
             <InfoRow
               icon={CalendarDays}
@@ -102,6 +103,16 @@ export default async function KickoffPage() {
               href="/dashboard/resources"
               icon={FolderArchive}
               label="Work through Before One — your pre-cohort flows"
+            />
+            <ChecklistLink
+              href="/dashboard/community"
+              icon={MessagesSquare}
+              label="Link Discord and meet your cohort"
+            />
+            <ChecklistLink
+              href="/dashboard/team"
+              icon={Rocket}
+              label="Start your team — or accept an invite"
             />
             <ChecklistLink
               href="/dashboard/settings"

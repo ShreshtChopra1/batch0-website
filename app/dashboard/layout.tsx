@@ -31,9 +31,9 @@ export default async function DashboardLayout({
   // hours, no Check-in, no Course/Resources). Until they're enrolled
   // those routes either throw "not enrolled" or 404 — hiding the links
   // prevents dead ends in the sidebar. Accepted/enrolled students whose
-  // cohort hasn't started yet (preCohort) get only the personal pages +
-  // pre-cohort Resources. Admins always see everything so they can
-  // preview the full student view.
+  // cohort hasn't started yet (preCohort) get the personal pages +
+  // Community, plus Kickoff, Resources, and Team once enrolled. Admins
+  // always see everything so they can preview the full student view.
   const [access, discordEnabled, siteConfig] = await Promise.all([
     getStudentAccess(profile.role),
     isDiscordEnabled(),

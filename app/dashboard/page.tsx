@@ -11,6 +11,7 @@ import { getPassForUser } from "@/lib/founder-pass";
 import { ChargePayButton } from "@/components/charge-pay-button";
 import { getStudentAccess, type StudentAccess } from "@/lib/access";
 import { fmtDateOnly, PRE_COHORT_ALLOWED_HREFS } from "@/lib/pre-cohort";
+import { ENROLLED_ONLY_HREFS } from "@/lib/nav-config";
 import type { Role } from "@/lib/types";
 import { env } from "@/lib/env";
 import {
@@ -292,9 +293,9 @@ export default async function DashboardHome() {
                 if (l.href === "/dashboard/kickoff") {
                   return preCohort && access.enrolled;
                 }
-                // Resources are enrolled-only — don't dangle a dead-end
-                // link before the seat is paid for.
-                if (l.href === "/dashboard/resources" && !access.enrolled) {
+                // Don't dangle dead-end links at a student whose seat
+                // isn't paid for — same set the sidebar hides.
+                if (!access.enrolled && ENROLLED_ONLY_HREFS.has(l.href)) {
                   return false;
                 }
                 // Pre-cohort: only link to pages the middleware allows —
@@ -379,7 +380,8 @@ function appStatus(
         lede: (price) =>
           `You're in. Lock in your seat with the one-time ${price} tuition` +
           `${startDate ? ` — the cohort starts ${startDate}` : ""}. ` +
-          "Paying unlocks kickoff details and the pre-cohort resources.",
+          "Paying unlocks kickoff details, your team page, and the " +
+          "pre-cohort resources.",
         cta: {
           href: "/dashboard/application",
           label: (price) => `Pay ${price} to enroll`,
@@ -387,13 +389,15 @@ function appStatus(
       };
     }
     // Enrolled (or paid) — the course isn't open yet, so the hero points
-    // at what IS open: the kickoff page and pre-cohort resources.
+    // at what IS open: kickoff, pre-cohort resources, Discord, and the
+    // team page (co-founders can be lined up before day one).
     return {
       label: "Enrolled",
       lede: () =>
         `You're enrolled${access.cohortName ? ` in ${access.cohortName}` : ""}. ` +
         `The cohort kicks off${startDate ? ` on ${startDate}` : " soon"} — ` +
-        "kickoff details and pre-cohort resources are open for you now.",
+        "kickoff, Discord, your team page, and the pre-cohort resources " +
+        "are open for you now.",
       cta: {
         href: "/dashboard/kickoff",
         label: () => "See kickoff details",

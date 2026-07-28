@@ -3,9 +3,9 @@
 //
 // An accepted (or already-enrolled) student whose cohort hasn't started yet
 // only gets the personal pages: home, application, billing, referrals,
-// settings — plus kickoff and resources (pre-cohort section) once they've
-// paid to enroll. Everything else under /dashboard is off-limits until
-// kickoff.
+// settings, community (Discord) — plus kickoff, resources (pre-cohort
+// section), and team once they've paid to enroll. Everything else under
+// /dashboard is off-limits until kickoff.
 //
 // This module is imported by the Edge middleware, server components, AND
 // client components (sidebar / mobile nav) — keep it dependency-free and
@@ -36,15 +36,19 @@ export function isAcceptedStatus(
 }
 
 /**
- * Nav hrefs (exact) that stay visible in the sidebar pre-cohort. Kickoff
- * and Resources additionally require enrollment — filterStudentNavItem
- * and the pages themselves enforce that on top of this set.
+ * Nav hrefs (exact) that stay visible in the sidebar pre-cohort. Kickoff,
+ * Resources, and Team additionally require enrollment — filterStudentNavItem
+ * and the pages themselves enforce that on top of this set. Community
+ * (Discord) is open to every pre-cohort student: the server is where a
+ * cohort meets before day one.
  */
 export const PRE_COHORT_ALLOWED_HREFS = new Set<string>([
   "/dashboard",
   "/dashboard/application",
   "/dashboard/kickoff",
   "/dashboard/resources",
+  "/dashboard/community",
+  "/dashboard/team",
   "/dashboard/billing",
   "/dashboard/referrals",
   "/dashboard/settings",
@@ -57,6 +61,8 @@ const PRE_COHORT_ALLOWED_PREFIXES = [
   "/dashboard/application",
   "/dashboard/kickoff",
   "/dashboard/resources",
+  "/dashboard/community",
+  "/dashboard/team",
   "/dashboard/billing",
   "/dashboard/referrals",
   "/dashboard/settings",

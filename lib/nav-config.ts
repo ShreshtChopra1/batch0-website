@@ -106,8 +106,10 @@ export const STUDENT_NAV: NavItem[] = STUDENT_NAV_GROUPS.flatMap(
 );
 
 // Routes that only resolve once a student is enrolled in a cohort. Used by
-// both the desktop sidebar and the mobile drawer to hide dead-end links
-// before enrollment — keep this list as the single source of truth.
+// the desktop sidebar, the mobile drawer, and the dashboard quick links to
+// hide dead-end links before enrollment — keep this list as the single
+// source of truth. (Community is deliberately absent: Discord is open to
+// every signed-in student.)
 export const ENROLLED_ONLY_HREFS = new Set<string>([
   "/dashboard/course",
   "/dashboard/team",
@@ -130,10 +132,10 @@ export type StudentNavContext = {
 /**
  * The one visibility predicate for student nav items — desktop sidebar and
  * mobile drawer both call this so the two can never drift. Pre-cohort
- * lockdown wins first (only the personal pages survive); then per-feature
- * flags; then the hiding of enrolled-only routes — which applies inside
- * the pre-cohort window too, so an accepted-but-unpaid student sees
- * neither Kickoff nor Resources.
+ * lockdown wins first (only the personal pages + Community and Team
+ * survive); then per-feature flags; then the hiding of enrolled-only
+ * routes — which applies inside the pre-cohort window too, so an
+ * accepted-but-unpaid student sees no Kickoff, Resources, or Team.
  */
 export function filterStudentNavItem(
   item: NavItem,

@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Label } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/dialog";
@@ -104,6 +105,7 @@ export function FlowPlayer({
       : [];
   });
   const [touched, setTouched] = useState(false);
+  const router = useRouter();
 
   const step = byKey.get(currentKey) ?? ordered[0];
   const position = ordered.findIndex((s) => s.step_key === step.step_key);
@@ -155,6 +157,32 @@ export function FlowPlayer({
     return step.config.next ?? nextStepKeyByOrder(ordered, step.step_key);
   }
 
+  /**
+   * Does landing on `key` end the flow? Both an outcome screen and a
+   * missing target (nothing comes after this step) do.
+   */
+  function endsFlowAt(key: string | null | undefined): boolean {
+    if (!key || !byKey.has(key)) return true;
+    return byKey.get(key)!.kind === "outcome";
+  }
+
+  /**
+   * Advance one step. With an outcome screen ahead, goTo lands on it and
+   * marks the flow complete. Without one — the step is simply the last —
+   * record the completion here and hand the student back to the hub;
+   * goTo(null) would otherwise leave a button that does nothing.
+   */
+  function advance(key: string | null, nextAnswers: FlowAnswers) {
+    if (key && byKey.has(key)) {
+      goTo(key, nextAnswers);
+      return;
+    }
+    setAnswers(nextAnswers);
+    setCompleted(true);
+    persist(nextAnswers, step.step_key, true);
+    router.push("/dashboard/resources");
+  }
+
   function goBack() {
     const prev = history[history.length - 1];
     if (!prev) return;
@@ -179,7 +207,7 @@ export function FlowPlayer({
     const opt = step.config.options?.find((o) => o.value === value);
     if (!opt) return;
     const next = { ...answers, [step.step_key]: value };
-    goTo(opt.next ?? nextStepKeyByOrder(ordered, step.step_key), next);
+    advance(opt.next ?? nextStepKeyByOrder(ordered, step.step_key), next);
   }
 
   function submitInput() {
@@ -191,14 +219,14 @@ export function FlowPlayer({
     if (missing) return;
     const clean: Record<string, string> = {};
     for (const f of fields) clean[f.key] = (draft[f.key] ?? "").trim();
-    goTo(defaultNext(), { ...answers, [step.step_key]: clean });
+    advance(defaultNext(), { ...answers, [step.step_key]: clean });
   }
 
   function submitChecklist() {
     setTouched(true);
     const items = step.config.items ?? [];
     if (step.config.requireAll && checked.length < items.length) return;
-    goTo(defaultNext(), { ...answers, [step.step_key]: checked });
+    advance(defaultNext(), { ...answers, [step.step_key]: checked });
   }
 
   // ---- download summary -------------------------------------------------
@@ -244,6 +272,25 @@ export function FlowPlayer({
           ),
         )
       : [];
+
+  // The last step of a flow says "Done", not "Continue" — the click either
+  // lands on the outcome screen or finishes the flow outright. A choice
+  // step only counts as last when every option ends it.
+  const finishes =
+    step.kind === "choice"
+      ? (step.config.options ?? []).every((o) =>
+          endsFlowAt(o.next ?? nextStepKeyByOrder(ordered, step.step_key)),
+        )
+      : endsFlowAt(defaultNext());
+  const advanceLabel = finishes ? (
+    <>
+      Done <CheckCircle className="h-4 w-4" />
+    </>
+  ) : (
+    <>
+      Continue <ArrowRight className="h-4 w-4" />
+    </>
+  );
 
   return (
     <div className="mt-4">
@@ -451,22 +498,20 @@ export function FlowPlayer({
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
           {step.kind === "content" && (
-            <Button onClick={() => goTo(defaultNext(), answers)}>
-              Continue <ArrowRight className="h-4 w-4" />
+            <Button onClick={() => advance(defaultNext(), answers)}>
+              {advanceLabel}
             </Button>
           )}
           {step.kind === "input" && (
-            <Button onClick={submitInput}>
-              Continue <ArrowRight className="h-4 w-4" />
-            </Button>
+            <Button onClick={submitInput}>{advanceLabel}</Button>
           )}
           {step.kind === "checklist" && (
-            <Button onClick={submitChecklist}>
-              Continue <ArrowRight className="h-4 w-4" />
-            </Button>
+            <Button onClick={submitChecklist}>{advanceLabel}</Button>
           )}
           {step.kind === "choice" && (
-            <p className="text-xs text-ink-faint">Pick one to continue</p>
+            <p className="text-xs text-ink-faint">
+              Pick one to {finishes ? "finish" : "continue"}
+            </p>
           )}
         </div>
       )}
