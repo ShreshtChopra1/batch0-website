@@ -37,10 +37,10 @@ export default async function SubmissionDetailPage({
   const applicantEmail = (data as any).applicant?.email ?? null;
 
   // Uploaded videos live in the private `challenge-uploads` bucket — mint a
-  // short-lived signed URL per uploaded answer so admins can play them here.
+  // short-lived signed URL for any uploaded answer (video OR link field, since
+  // every link field now offers an upload) so admins can play them here.
   const videoSignedUrls: Record<string, string> = {};
   for (const q of sub.questionsSnapshot) {
-    if (q.type !== "video") continue;
     const raw = (sub.answers[q.id] ?? "").trim();
     if (!isUploadAnswer(raw)) continue;
     const { data: signed } = await admin.storage
@@ -94,7 +94,7 @@ export default async function SubmissionDetailPage({
                 <dd className="mt-1 whitespace-pre-line text-sm text-ink">
                   {!raw ? (
                     <span className="text-ink-faint">—</span>
-                  ) : q.type === "video" && isUploadAnswer(raw) ? (
+                  ) : isUploadAnswer(raw) ? (
                     videoSignedUrls[q.id] ? (
                       <div className="space-y-2">
                         <video
