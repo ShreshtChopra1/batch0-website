@@ -32,6 +32,37 @@ function safeSegment(s: string) {
     .slice(0, 80);
 }
 
+// The private challenge-uploads bucket is normally created by migration 0047,
+// but we self-heal here so the feature works on any deploy without a manual
+// migration step. Cached per warm instance so we only probe once.
+let bucketReady: Promise<void> | null = null;
+function ensureChallengeUploadBucket(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<void> {
+  if (!bucketReady) {
+    bucketReady = (async () => {
+      const { error } = await admin.storage.createBucket(
+        CHALLENGE_UPLOAD_BUCKET,
+        {
+          public: false,
+          allowedMimeTypes: ["video/mp4"],
+          fileSizeLimit: 209715200, // 200 MB, matches the client-side cap
+        },
+      );
+      // A "already exists" error is the expected happy path once created.
+      if (
+        error &&
+        !/exist/i.test(error.message) &&
+        !("statusCode" in error && (error as any).statusCode === "409")
+      ) {
+        bucketReady = null; // let a later call retry a genuine failure
+        throw new Error(error.message);
+      }
+    })();
+  }
+  return bucketReady;
+}
+
 export type ChallengeUploadToken = {
   ok: boolean;
   error?: string;
@@ -85,6 +116,11 @@ export async function getChallengeUploadToken(input: {
   const path = `${challenge.id}/${user.id}/${Date.now()}-${safeSegment(base)}.${safeSegment(ext)}`;
 
   const admin = createAdminClient();
+  try {
+    await ensureChallengeUploadBucket(admin);
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? "Storage isn't ready yet." };
+  }
   const { data, error } = await admin.storage
     .from(CHALLENGE_UPLOAD_BUCKET)
     .createSignedUploadUrl(path);

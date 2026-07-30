@@ -194,7 +194,7 @@ export function ChallengeForm({
                   placeholder={q.placeholder}
                   error={err}
                 />
-              ) : q.type === "video" ? (
+              ) : q.type === "video" || q.type === "url" ? (
                 <VideoField
                   inputId={inputId}
                   value={answers[q.id] ?? ""}
@@ -238,10 +238,10 @@ export function ChallengeForm({
                   })}
                 </div>
               ) : (
+                // short_text (url/video are handled by VideoField above).
                 <Input
                   id={inputId}
-                  type={q.type === "url" ? "url" : "text"}
-                  inputMode={q.type === "url" ? "url" : undefined}
+                  type="text"
                   value={answers[q.id] ?? ""}
                   onChange={(e) => set(q.id, e.target.value)}
                   placeholder={q.placeholder}

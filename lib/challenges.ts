@@ -50,23 +50,11 @@ function fieldSchema(q: ChallengeQuestion): z.ZodTypeAny {
       const s = z.string().trim().max(LONG_TEXT_MAX, "That's too long");
       return req ? s.min(1, "Required") : s.optional().or(z.literal(""));
     }
-    case "url": {
-      const s = z
-        .string()
-        .trim()
-        .max(URL_MAX, "That's too long")
-        .refine(
-          (v) => v === "" || HTTP_URL_RE.test(v),
-          "Must be a full URL starting with http:// or https://",
-        );
-      return req
-        ? s.refine((v) => v.length > 0, "Required")
-        : s.optional().or(z.literal(""));
-    }
+    case "url":
     case "video": {
-      // A video answer is either a pasted http(s) link or an uploaded file
-      // encoded as `upload:<path>` (see CHALLENGE_UPLOAD_PREFIX). Both are
-      // plain strings; accept either, reject anything else.
+      // Both accept a pasted http(s) link OR an uploaded file encoded as
+      // `upload:<path>` (see CHALLENGE_UPLOAD_PREFIX) — since every link field
+      // now offers an mp4 upload alongside the link. Both are plain strings.
       const s = z
         .string()
         .trim()
