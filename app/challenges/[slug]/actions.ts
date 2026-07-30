@@ -12,8 +12,12 @@ import {
   getChallengeBySlug,
   buildAnswerSchema,
   isChallengeOpen,
+  HTTP_URL_RE,
   CHALLENGE_UPLOAD_BUCKET,
+  CHALLENGE_UPLOAD_PREFIX,
+  CHALLENGE_EXTRA_VIDEO_KEY,
   type ChallengeAnswers,
+  type ChallengeQuestion,
 } from "@/lib/challenges";
 
 export type ChallengeSubmitResult = {
@@ -206,6 +210,34 @@ export async function submitChallengeApplication(
   }
   const answers = parsed.data as ChallengeAnswers;
 
+  // Standalone "Demo video" field — offered on every form, so it isn't part of
+  // the challenge's questions. Accept a pasted link or an `upload:<path>`, then
+  // mirror a synthetic `video` question into the snapshot so the admin review
+  // page renders it with no special-casing.
+  let questionsSnapshot: ChallengeQuestion[] = challenge.questions;
+  const extraVideo = String(formData.get("extra_video") ?? "")
+    .trim()
+    .slice(0, 500);
+  if (
+    extraVideo &&
+    (HTTP_URL_RE.test(extraVideo) ||
+      extraVideo.startsWith(CHALLENGE_UPLOAD_PREFIX))
+  ) {
+    answers[CHALLENGE_EXTRA_VIDEO_KEY] = extraVideo;
+    questionsSnapshot = [
+      ...challenge.questions,
+      {
+        id: CHALLENGE_EXTRA_VIDEO_KEY,
+        type: "video",
+        label: "Demo video",
+        help: "",
+        placeholder: "",
+        required: false,
+        options: [],
+      },
+    ];
+  }
+
   const admin = createAdminClient();
 
   // One application per user per challenge.
@@ -242,7 +274,7 @@ export async function submitChallengeApplication(
       challenge_id: challenge.id,
       user_id: user.id,
       answers,
-      questions_snapshot: challenge.questions,
+      questions_snapshot: questionsSnapshot,
       status: "submitted",
       referral_code: referralCode,
     })
