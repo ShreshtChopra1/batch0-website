@@ -14,12 +14,14 @@ export type ChallengeQuestionType =
   | "short_text"
   | "long_text"
   | "url"
+  | "video"
   | "select";
 
 export const CHALLENGE_QUESTION_TYPES: readonly ChallengeQuestionType[] = [
   "short_text",
   "long_text",
   "url",
+  "video",
   "select",
 ];
 
@@ -27,6 +29,7 @@ export const QUESTION_TYPE_LABELS: Record<ChallengeQuestionType, string> = {
   short_text: "Short text",
   long_text: "Long text",
   url: "Link / URL",
+  video: "Video (link or upload)",
   select: "Multiple choice",
 };
 
@@ -106,6 +109,29 @@ export const LONG_TEXT_MAX = 4000;
 export const URL_MAX = 500;
 /** Same rule the cohort application uses for URL fields. */
 export const HTTP_URL_RE = /^https?:\/\/.+/;
+
+/**
+ * A `video` answer is stored as EITHER a normal `http(s)` URL (pasted link) or
+ * an uploaded file, encoded as `upload:<storage-path>`. The prefix keeps the
+ * answer a plain string so nothing downstream has to change — the challenge
+ * submission form writes it, and the admin review page mints a signed URL for
+ * any `upload:`-prefixed value (files live in the private `challenge-uploads`
+ * bucket). Uploaded paths are always relative to that one bucket.
+ */
+export const CHALLENGE_UPLOAD_PREFIX = "upload:";
+export const CHALLENGE_UPLOAD_BUCKET = "challenge-uploads";
+
+/** True when a `video` answer points at an uploaded file rather than a link. */
+export function isUploadAnswer(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.startsWith(CHALLENGE_UPLOAD_PREFIX);
+}
+
+/** The storage path inside `challenge-uploads`, or "" for a non-upload value. */
+export function uploadPathOf(value: string | null | undefined): string {
+  return isUploadAnswer(value)
+    ? (value as string).slice(CHALLENGE_UPLOAD_PREFIX.length)
+    : "";
+}
 
 export function isQuestionType(v: unknown): v is ChallengeQuestionType {
   return (

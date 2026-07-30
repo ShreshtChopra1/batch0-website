@@ -12,6 +12,7 @@ import {
   getChallengeBySlug,
   buildAnswerSchema,
   isChallengeOpen,
+  CHALLENGE_UPLOAD_BUCKET,
   type ChallengeAnswers,
 } from "@/lib/challenges";
 
@@ -21,6 +22,81 @@ export type ChallengeSubmitResult = {
   fieldErrors?: Record<string, string>;
   submissionId?: string;
 };
+
+/** Filesystem-safe path segment (mirrors the team-drive upload helper). */
+function safeSegment(s: string) {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+export type ChallengeUploadToken = {
+  ok: boolean;
+  error?: string;
+  path?: string;
+  token?: string;
+  bucket?: string;
+};
+
+/**
+ * Mint a one-shot signed upload URL for a challenge video. The applicant's
+ * browser uploads the file straight to the private `challenge-uploads` bucket
+ * via `uploadToSignedUrl`, which sidesteps the ~1 MB server-action body limit
+ * that would otherwise make video uploads impossible. The signed URL is what
+ * authorizes the write, so the bucket needs no broad INSERT policy — same
+ * pattern as `getTeamDriveUploadToken`.
+ *
+ * Gated to signed-in users applying to an OPEN challenge, so tokens can't be
+ * minted for closed/nonexistent challenges or by anonymous callers.
+ */
+export async function getChallengeUploadToken(input: {
+  slug: string;
+  filename: string;
+}): Promise<ChallengeUploadToken> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Please sign in to upload." };
+
+  const slug = String(input.slug ?? "").trim();
+  if (!slug) return { ok: false, error: "Missing challenge." };
+
+  const challenge = await getChallengeBySlug(slug);
+  if (!challenge) return { ok: false, error: "This challenge no longer exists." };
+
+  const { data: enabledSetting } = await supabase
+    .from("site_settings")
+    .select("value")
+    .eq("key", "challenges_enabled")
+    .maybeSingle();
+  if (enabledSetting?.value === false) {
+    return { ok: false, error: "Challenges are currently unavailable." };
+  }
+  if (!isChallengeOpen(challenge)) {
+    return { ok: false, error: "This challenge is closed." };
+  }
+
+  const dot = input.filename.lastIndexOf(".");
+  const base = dot > 0 ? input.filename.slice(0, dot) : input.filename;
+  const ext = dot > 0 ? input.filename.slice(dot + 1) : "mp4";
+  const path = `${challenge.id}/${user.id}/${Date.now()}-${safeSegment(base)}.${safeSegment(ext)}`;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.storage
+    .from(CHALLENGE_UPLOAD_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error) return { ok: false, error: error.message };
+
+  return {
+    ok: true,
+    path: data.path,
+    token: data.token,
+    bucket: CHALLENGE_UPLOAD_BUCKET,
+  };
+}
 
 /**
  * Submit a weekly-challenge application. Login required. Validates the
