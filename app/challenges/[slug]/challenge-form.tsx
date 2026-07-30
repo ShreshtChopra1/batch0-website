@@ -331,6 +331,26 @@ function VideoField({
 
   return (
     <div className="space-y-3">
+      {/* The paste-a-link box — always present, never replaced. When a file is
+          uploaded the answer holds the upload, so show the link field empty
+          rather than the internal `upload:` value. */}
+      <Input
+        id={inputId}
+        type="url"
+        inputMode="url"
+        value={uploaded ? "" : value}
+        onChange={(e) => onUrlChange(e.target.value)}
+        placeholder={placeholder || "https://www.loom.com/share/…"}
+        error={error}
+      />
+
+      <div className="flex items-center gap-3 text-xs text-ink-faint">
+        <span className="h-px flex-1 bg-line" />
+        or upload an MP4
+        <span className="h-px flex-1 bg-line" />
+      </div>
+
+      {/* The separate file-upload box — drag-and-drop + Browse. */}
       {uploaded ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-phosphor/40 bg-phosphor/5 px-3.5 py-3">
           <div className="flex items-center gap-2 text-sm text-ink">
@@ -349,77 +369,59 @@ function VideoField({
           </button>
         </div>
       ) : (
-        <>
-          <div
-            role="button"
-            tabIndex={0}
-            aria-label="Upload an MP4 video"
-            onClick={() => !disabled && !uploading && fileRef.current?.click()}
-            onKeyDown={(e) => {
-              if ((e.key === "Enter" || e.key === " ") && !disabled && !uploading) {
-                e.preventDefault();
-                fileRef.current?.click();
-              }
-            }}
-            onDragOver={(e) => {
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Upload an MP4 video"
+          onClick={() => !disabled && !uploading && fileRef.current?.click()}
+          onKeyDown={(e) => {
+            if ((e.key === "Enter" || e.key === " ") && !disabled && !uploading) {
               e.preventDefault();
-              if (!disabled && !uploading) setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              if (!disabled && !uploading) handleFiles(e.dataTransfer.files);
-            }}
-            className={`press flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition ${
-              dragging
-                ? "border-phosphor bg-phosphor/10"
-                : "border-line bg-wash hover:border-ink/30"
-            } ${disabled || uploading ? "cursor-not-allowed opacity-60" : ""}`}
-          >
-            <Upload className="h-5 w-5 text-ink-soft" />
-            <div className="text-sm text-ink">
-              {uploading ? (
-                "Uploading…"
-              ) : (
-                <>
-                  <span className="font-medium text-phosphor-ink">
-                    Browse for an MP4
-                  </span>{" "}
-                  or drop it here
-                </>
-              )}
-            </div>
-            <div className="text-xs text-ink-faint">MP4 up to 200 MB</div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="video/mp4,.mp4"
-              className="hidden"
-              disabled={disabled || uploading}
-              onChange={(e) => {
-                handleFiles(e.target.files);
-                e.target.value = "";
-              }}
-            />
+              fileRef.current?.click();
+            }
+          }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!disabled && !uploading) setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            if (!disabled && !uploading) handleFiles(e.dataTransfer.files);
+          }}
+          className={`press flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition ${
+            dragging
+              ? "border-phosphor bg-phosphor/10"
+              : "border-line bg-wash hover:border-ink/30"
+          } ${disabled || uploading ? "cursor-not-allowed opacity-60" : ""}`}
+        >
+          <Upload className="h-5 w-5 text-ink-soft" />
+          <div className="text-sm text-ink">
+            {uploading ? (
+              "Uploading…"
+            ) : (
+              <>
+                <span className="font-medium text-phosphor-ink">
+                  Browse for an MP4
+                </span>{" "}
+                or drop it here
+              </>
+            )}
           </div>
-
-          <div className="flex items-center gap-3 text-xs text-ink-faint">
-            <span className="h-px flex-1 bg-line" />
-            or paste a link
-            <span className="h-px flex-1 bg-line" />
-          </div>
-
-          <Input
-            id={inputId}
-            type="url"
-            inputMode="url"
-            value={value}
-            onChange={(e) => onUrlChange(e.target.value)}
-            placeholder={placeholder || "https://www.loom.com/share/…"}
-            error={error}
+          <div className="text-xs text-ink-faint">MP4 up to 200 MB</div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="video/mp4,.mp4"
+            className="hidden"
+            disabled={disabled || uploading}
+            onChange={(e) => {
+              handleFiles(e.target.files);
+              e.target.value = "";
+            }}
           />
-        </>
+        </div>
       )}
     </div>
   );
