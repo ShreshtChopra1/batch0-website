@@ -7,6 +7,7 @@ import { Input, Textarea, Label, FieldError } from "@/components/ui/input";
 import {
   HTTP_URL_RE,
   CHALLENGE_UPLOAD_PREFIX,
+  CHALLENGE_EXTRA_VIDEO_KEY,
   isUploadAnswer,
   type Challenge,
 } from "@/lib/challenges-shared";
@@ -16,6 +17,19 @@ import { submitChallengeApplication, getChallengeUploadToken } from "./actions";
 /** Applicant video uploads are capped client-side; the bucket enforces its
  *  own limit too (see migration 0047). 200 MB comfortably fits a short demo. */
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+
+/** The standalone "Demo video" field shown on every challenge form, regardless
+ *  of the admin-authored questions. It reuses the `video` machinery via the
+ *  reserved answer key. */
+const EXTRA_VIDEO_Q: Challenge["questions"][number] = {
+  id: CHALLENGE_EXTRA_VIDEO_KEY,
+  type: "video",
+  label: "Demo video",
+  help: "Optional — paste a link or upload an MP4 showing your project.",
+  placeholder: "https://www.loom.com/share/…",
+  required: false,
+  options: [],
+};
 
 function isMp4(file: File): boolean {
   return (
@@ -116,6 +130,13 @@ export function ChallengeForm({
         errs[q.id] = "Must be a full URL starting with http:// or https://";
       }
     }
+    // The standalone demo video is optional; if a link was pasted (not an
+    // upload), it still has to be a real URL.
+    const ev = (answers[CHALLENGE_EXTRA_VIDEO_KEY] ?? "").trim();
+    if (ev && !isUploadAnswer(ev) && !HTTP_URL_RE.test(ev)) {
+      errs[CHALLENGE_EXTRA_VIDEO_KEY] =
+        "Must be a full URL starting with http:// or https://";
+    }
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -131,6 +152,7 @@ export function ChallengeForm({
       for (const q of challenge.questions) {
         fd.set(`q_${q.id}`, answers[q.id] ?? "");
       }
+      fd.set("extra_video", answers[CHALLENGE_EXTRA_VIDEO_KEY] ?? "");
       const res = await submitChallengeApplication(null, fd);
       if (res.ok) {
         setSubmitted(true);
@@ -260,6 +282,30 @@ export function ChallengeForm({
             shortly.
           </p>
         )}
+
+        {/* Standalone demo-video field — always offered, independent of the
+            admin-authored questions above. */}
+        <div>
+          <Label htmlFor={`q_${EXTRA_VIDEO_Q.id}`}>{EXTRA_VIDEO_Q.label}</Label>
+          {EXTRA_VIDEO_Q.help && (
+            <p className="mb-1.5 text-xs text-ink-soft">{EXTRA_VIDEO_Q.help}</p>
+          )}
+          <VideoField
+            inputId={`q_${EXTRA_VIDEO_Q.id}`}
+            value={answers[EXTRA_VIDEO_Q.id] ?? ""}
+            uploadedName={uploadedNames[EXTRA_VIDEO_Q.id]}
+            uploading={uploadingId === EXTRA_VIDEO_Q.id}
+            disabled={uploadingId !== null && uploadingId !== EXTRA_VIDEO_Q.id}
+            placeholder={EXTRA_VIDEO_Q.placeholder}
+            error={fieldErrors[EXTRA_VIDEO_Q.id] || undefined}
+            onUrlChange={(v) => set(EXTRA_VIDEO_Q.id, v)}
+            onPickFile={(f) => uploadVideo(EXTRA_VIDEO_Q, f)}
+            onClear={() => clearUpload(EXTRA_VIDEO_Q.id)}
+          />
+          <FieldError id={`q_${EXTRA_VIDEO_Q.id}-error`}>
+            {fieldErrors[EXTRA_VIDEO_Q.id] || undefined}
+          </FieldError>
+        </div>
       </div>
 
       {formError && (

@@ -121,6 +121,16 @@ export const HTTP_URL_RE = /^https?:\/\/.+/;
 export const CHALLENGE_UPLOAD_PREFIX = "upload:";
 export const CHALLENGE_UPLOAD_BUCKET = "challenge-uploads";
 
+/**
+ * Reserved answer key for the standalone "Demo video" field that every
+ * challenge submission form offers, independent of the admin-authored
+ * questions. Stored in the same `answers` map and mirrored into
+ * `questions_snapshot` as a synthetic `video` question at submit time, so the
+ * admin review page renders it with no special-casing. The `__…__` shape can't
+ * collide with a real question id (those come from newQuestionId()).
+ */
+export const CHALLENGE_EXTRA_VIDEO_KEY = "__demo_video__";
+
 /** True when a `video` answer points at an uploaded file rather than a link. */
 export function isUploadAnswer(value: string | null | undefined): boolean {
   return typeof value === "string" && value.startsWith(CHALLENGE_UPLOAD_PREFIX);
