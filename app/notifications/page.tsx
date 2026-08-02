@@ -10,7 +10,7 @@ export const metadata = { title: "Notifications · batch0" };
 export default async function NotificationsPage() {
   const user = await requireUser();
   const profile = await getProfile();
-  const home = roleHome(profile?.role ?? "student");
+  const home = await roleHome(profile?.role ?? "student");
 
   const supabase = createClient();
   const { data: items } = await supabase

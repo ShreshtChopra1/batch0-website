@@ -3,9 +3,9 @@ import { SignupForm } from "./signup-form";
 import { getSiteConfig } from "@/lib/site-config";
 
 export const metadata = {
-  title: "Apply — Create Your Account · batch0",
+  title: "Create Your Account · batch0",
   description:
-    "Step 1 of applying to batch0: create your free account, then fill in the application. Free to apply; tuition is charged only if accepted.",
+    "Create your free batch0 account. Applying to a cohort is optional and free; tuition is charged only if you're accepted.",
 };
 
 // Mirrors safeNext in app/(auth)/login/page.tsx — same-origin paths only,
@@ -25,7 +25,11 @@ export default async function SignupPage({
   const loginHref = safe ? `/login?next=${encodeURIComponent(safe)}` : "/login";
   const config = await getSiteConfig();
   const { derived } = config;
-  const isApplyFlow = !safe || safe === "/apply" || safe.startsWith("/apply?");
+  // Only frame this as "step 1 of applying" when the visitor is actually
+  // mid-apply. An account is a thing you can just have — staff, mentors, and
+  // interns are given their role after signing up, never by applying — so a
+  // bare /signup gets neutral copy.
+  const isApplyFlow = !!safe && (safe === "/apply" || safe.startsWith("/apply?"));
 
   return (
     <div>
@@ -50,7 +54,8 @@ export default async function SignupPage({
             Create your account
           </h1>
           <p className="mt-1 text-sm text-white/50">
-            Sign up for batch0. Takes 30 seconds.
+            Sign up for batch0. Takes 30 seconds. Applying to a cohort is a
+            separate, optional step.
           </p>
         </>
       )}

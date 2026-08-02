@@ -8,7 +8,7 @@ import { AiScreenButton } from "./ai-screen-button";
 import { ReviewThread } from "./review-thread";
 import { ReviewScorecard } from "./review-scorecard";
 import { getSiteConfig } from "@/lib/site-config";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { resolveReferrersByCode } from "@/lib/referrals";
 import { hasFounderPass } from "@/lib/founder-pass";
 import { getRebuildForUser } from "@/lib/founder-pass-perks";
@@ -22,7 +22,7 @@ export default async function AdminApplicationDetail({
   params: { id: string };
 }) {
   const admin = createAdminClient();
-  const viewer = await requireAdmin();
+  const { profile: viewer } = await requirePermission("applications.view");
   const [{ data: app }, { data: comments }, siteConfig, { data: reviews }] =
     await Promise.all([
       admin

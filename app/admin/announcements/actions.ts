@@ -1,6 +1,6 @@
 "use server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import { sendEmail } from "@/lib/email/send";
 import { notifyMany } from "@/lib/notifications";
@@ -40,7 +40,7 @@ export type AnnouncementInput = {
 export async function broadcastAnnouncement(
   input: AnnouncementInput,
 ): Promise<{ recipients: number; discordPosted: boolean; announcementId: string | null }> {
-  const { userId: authorId } = await assertAdmin();
+  const { userId: authorId } = await assertPermission("announcements.manage");
   if (!input.title.trim() || !input.body.trim()) {
     throw new Error("Title and body are required.");
   }
@@ -211,7 +211,7 @@ function escape(s: string) {
 }
 
 export async function deleteAnnouncement(id: string) {
-  await assertAdmin();
+  await assertPermission("announcements.manage");
   const admin = createAdminClient();
   // Clear notifications that linked to this announcement so students
   // don't see a deep-link to a 404.

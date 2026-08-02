@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import { sendEmail, sendEmailBatch } from "@/lib/email/send";
 import { Templates } from "@/lib/email/templates";
@@ -71,7 +71,7 @@ function validateDraft(
 export async function renderBlastPreview(
   draft: BlastDraft,
 ): Promise<{ ok: true; html: string } | { ok: false; error: string }> {
-  await assertAdmin();
+  await assertPermission("email.send");
   const v = validateDraft(draft);
   if (!v.ok) return v;
   const { html } = Templates.blast({
@@ -86,7 +86,7 @@ export async function renderBlastPreview(
 export async function sendTestBlast(
   draft: BlastDraft,
 ): Promise<{ ok: boolean; message: string }> {
-  await assertAdmin();
+  await assertPermission("email.send");
   const v = validateDraft(draft);
   if (!v.ok) return { ok: false, message: v.error };
 
@@ -122,7 +122,7 @@ export async function sendBlast(
   recipientIds: string[],
   draft: BlastDraft,
 ): Promise<BlastSendResult> {
-  const { userId } = await assertAdmin();
+  const { userId } = await assertPermission("email.send");
   const v = validateDraft(draft);
   if (!v.ok) return v;
 

@@ -46,7 +46,7 @@ export default async function ProgramPage() {
     getSiteConfig({ countryCode }),
     getProfile(),
   ]);
-  const authedHome = profile ? roleHome(profile.role) : null;
+  const authedHome = profile ? await roleHome(profile.role) : null;
   const { derived } = config;
   const cohortLabel = derived.cohortLabel || "the next cohort";
 

@@ -1,23 +1,31 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { capabilitiesForRole, getRole } from "@/lib/roles";
+import {
+  can,
+  canAccessAdmin,
+  canViewAdminPath,
+  resolveHome,
+  type Capabilities,
+  type Permission,
+} from "@/lib/permissions";
 import type { Profile, Role } from "@/lib/types";
 
-// Each role has exactly one "home" — the area they own and where role-
-// mismatches send them. Kept in sync with the gating in
-// lib/supabase/middleware.ts; if you add a new role, add it here and there.
-export function roleHome(role: Role): string {
-  switch (role) {
-    case "admin":
-      return "/admin";
-    case "mentor":
-      return "/mentor";
-    case "investor":
-      return "/investor";
-    case "student":
-    default:
-      return "/dashboard";
-  }
+/**
+ * Each role has a "home" — the area it owns and where role-mismatches send
+ * it. Since migration 0048 that's `app_roles.home_path`, falling back to
+ * whatever the role's permissions can actually reach (so a role that loses
+ * `mentor.panel` stops being sent to /mentor).
+ *
+ * Kept in sync with the inline copy in lib/supabase/middleware.ts, which
+ * can't import this module — see the note there.
+ */
+export async function roleHome(role: Role): Promise<string> {
+  const row = await getRole(role);
+  const caps = await capabilitiesForRole(role);
+  return resolveHome(caps, row?.home_path ?? null);
 }
 
 export async function getUser() {
@@ -92,36 +100,121 @@ export async function getProfile(): Promise<Profile | null> {
   };
 }
 
-export async function requireStudent() {
+// ---------------------------------------------------------------------------
+// Capabilities
+// ---------------------------------------------------------------------------
+
+export type Viewer = {
+  profile: Profile;
+  caps: Capabilities;
+};
+
+/**
+ * The signed-in user plus their resolved permissions, or null when signed
+ * out. Request-cached, so the layout, the sidebar, and the page body all
+ * share one resolution — and can never disagree about what the viewer can do.
+ */
+export const getViewer = cache(async function getViewer(): Promise<Viewer | null> {
   const profile = await getProfile();
-  if (!profile) redirect("/login");
-  // /dashboard is the student area only — non-students get sent to their
-  // own home rather than bouncing back here in a redirect loop.
-  if (profile.role !== "student") redirect(roleHome(profile.role));
-  return profile;
+  if (!profile) return null;
+  return { profile, caps: await capabilitiesForRole(profile.role) };
+});
+
+/** Permissions only. Convenience for call sites that don't need the profile. */
+export async function getCapabilities(): Promise<Capabilities | null> {
+  return (await getViewer())?.caps ?? null;
 }
 
+/** Non-throwing permission check for the signed-in user. */
+export async function viewerCan(permission: Permission): Promise<boolean> {
+  return can(await getCapabilities(), permission);
+}
+
+/** Signed in, with permissions resolved. Redirects to /login otherwise. */
+export async function requireViewer(): Promise<Viewer> {
+  const viewer = await getViewer();
+  if (!viewer) redirect("/login");
+  return viewer;
+}
+
+/**
+ * Gate a page on one permission. Anyone without it goes to their own home
+ * rather than seeing a 403 they can't act on.
+ */
+export async function requirePermission(permission: Permission): Promise<Viewer> {
+  const viewer = await requireViewer();
+  if (!can(viewer.caps, permission)) {
+    redirect(await roleHome(viewer.profile.role));
+  }
+  return viewer;
+}
+
+/**
+ * Gate on "belongs in /admin at all". Per-page permissions are enforced by
+ * app/admin/layout.tsx, which knows the pathname; pages call this to state
+ * that they're admin-area pages and to get the viewer.
+ */
+export async function requireAdminArea(): Promise<Viewer> {
+  const viewer = await requireViewer();
+  if (!canAccessAdmin(viewer.caps)) {
+    redirect(await roleHome(viewer.profile.role));
+  }
+  return viewer;
+}
+
+/** Gate on the permission that the given admin path requires. */
+export async function requireAdminPath(path: string): Promise<Viewer> {
+  const viewer = await requireViewer();
+  if (!canViewAdminPath(viewer.caps, path)) {
+    redirect(await roleHome(viewer.profile.role));
+  }
+  return viewer;
+}
+
+// ---------------------------------------------------------------------------
+// Legacy role guards
+// ---------------------------------------------------------------------------
+
+export async function requireStudent() {
+  const viewer = await getViewer();
+  if (!viewer) redirect("/login");
+  // /dashboard is the participant area — anyone whose role doesn't include it
+  // goes to their own home rather than bouncing back here in a loop. Admins
+  // are let through by the wildcard.
+  if (!can(viewer.caps, "student.dashboard")) {
+    redirect(await roleHome(viewer.profile.role));
+  }
+  return viewer.profile;
+}
+
+/**
+ * Full-power admin — the wildcard grant, not merely admin-area access. Use
+ * this only where the operation genuinely has no narrower permission; prefer
+ * `requirePermission("…")` everywhere else.
+ */
 export async function requireAdmin() {
-  const profile = await getProfile();
-  if (!profile) redirect("/login");
-  if (profile.role !== "admin") redirect(roleHome(profile.role));
-  return profile;
+  const viewer = await getViewer();
+  if (!viewer) redirect("/login");
+  if (!viewer.caps.superAdmin) {
+    redirect(await roleHome(viewer.profile.role));
+  }
+  return viewer.profile;
 }
 
 export async function requireMentor() {
-  const profile = await getProfile();
-  if (!profile) redirect("/login");
-  if (profile.role !== "admin" && profile.role !== "mentor") {
-    redirect(roleHome(profile.role));
+  const viewer = await getViewer();
+  if (!viewer) redirect("/login");
+  if (!can(viewer.caps, "mentor.panel")) {
+    redirect(await roleHome(viewer.profile.role));
   }
-  return profile;
+  return viewer.profile;
 }
 
 export async function requireInvestor() {
-  const profile = await getProfile();
-  if (!profile) redirect("/login");
-  if (profile.role !== "admin" && profile.role !== "investor") {
-    redirect(roleHome(profile.role));
+  const viewer = await getViewer();
+  if (!viewer) redirect("/login");
+  if (!can(viewer.caps, "investor.panel")) {
+    redirect(await roleHome(viewer.profile.role));
   }
-  return profile;
+  return viewer.profile;
 }

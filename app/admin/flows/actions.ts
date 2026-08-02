@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import {
   slugify,
@@ -108,7 +108,7 @@ function validate(input: FlowSaveInput): string {
 }
 
 export async function saveFlow(input: FlowSaveInput): Promise<string> {
-  const { userId } = await assertAdmin();
+  const { userId } = await assertPermission("flows.manage");
   const slug = validate(input);
 
   const admin = createAdminClient();
@@ -177,7 +177,7 @@ export async function saveFlow(input: FlowSaveInput): Promise<string> {
 }
 
 export async function deleteFlow(id: string): Promise<void> {
-  await assertAdmin();
+  await assertPermission("flows.manage");
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("flows")

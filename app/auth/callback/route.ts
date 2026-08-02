@@ -56,7 +56,7 @@ export async function GET(request: Request) {
         .maybeSingle();
 
       if (!nextParam) {
-        destination = roleHome((profile?.role ?? "student") as any);
+        destination = await roleHome((profile?.role ?? "student") as any);
       }
 
       if (user.email) {

@@ -54,6 +54,36 @@ where email = 'your.email@example.com';
 
 You'll now see an "Admin panel" link in your dashboard sidebar.
 
+## 4b. Roles and permissions
+
+Roles are rows in `public.app_roles`, not hard-coded strings. Five ship out of
+the box — `student`, `admin`, `mentor`, `investor`, and `intern` — and admins
+mint more at **/admin/roles**.
+
+Each role owns a list of permission keys (defined in
+[`lib/permissions.ts`](lib/permissions.ts)). A permission decides three things
+at once, from one string:
+
+- whether the link appears in the admin sidebar,
+- whether the route loads (enforced in the middleware *and* in
+  `app/admin/layout.tsx`),
+- whether the server actions on that page will run.
+
+`admin` holds the `*` wildcard — everything, including permissions added
+later. That's deliberately not editable from the UI: narrowing it would lock
+every admin, including you, out of the site. To give someone less, create a
+role.
+
+Two rules keep the system from being a privilege-escalation ladder:
+
+- **You can't grant what you don't hold.** Creating or editing a role, and
+  assigning one to a person, are all capped by the assigner's own permissions.
+- **Nobody re-roles themselves.**
+
+Nobody applies for a role. They sign up at `/signup` like anyone else, then an
+admin assigns the role — on the People page, or by email at the bottom of
+/admin/roles. No application, cohort, or payment is involved.
+
 ## 5. Stripe webhook (local dev)
 
 Stripe must be able to call your `/api/stripe/webhook` endpoint to confirm payment. Locally, use the Stripe CLI:

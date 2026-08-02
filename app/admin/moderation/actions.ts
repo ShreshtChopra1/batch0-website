@@ -1,12 +1,12 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
 
 export async function approveTeamLogo(input: { teamId: string }) {
-  await assertAdmin();
+  await assertPermission("moderation.manage");
   const admin = createAdminClient();
   const { data: team } = await admin
     .from("teams")
@@ -50,7 +50,7 @@ export async function rejectTeamLogo(input: {
   teamId: string;
   reason: string;
 }) {
-  await assertAdmin();
+  await assertPermission("moderation.manage");
   const reason = (input.reason ?? "").trim().slice(0, 240);
   const admin = createAdminClient();
 

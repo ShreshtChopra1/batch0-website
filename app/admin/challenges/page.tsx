@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { Card, StatusBadge } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LocalTime } from "@/components/ui/local-time";
@@ -18,7 +18,7 @@ export default async function AdminChallengesPage({
 }: {
   searchParams: { status?: string };
 }) {
-  await requireAdmin();
+  await requirePermission("challenges.manage");
   const admin = createAdminClient();
   const status = searchParams.status;
 

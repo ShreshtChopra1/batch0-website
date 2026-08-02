@@ -29,7 +29,7 @@ export default async function Home() {
     getActiveChallenge(),
     getPublicWinners(),
   ]);
-  const authedHome = profile ? roleHome(profile.role) : null;
+  const authedHome = profile ? await roleHome(profile.role) : null;
   return (
     <main className="min-h-screen bg-paper">
       <Navbar

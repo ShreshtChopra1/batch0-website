@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import {
   postChannelMessage,
@@ -19,7 +19,7 @@ import type { Role } from "@/lib/types";
  * circuits and the student-facing Discord UI hides itself.
  */
 export async function setDiscordEnabled(enabled: boolean) {
-  await assertAdmin();
+  await assertPermission("discord.manage");
   const admin = createAdminClient();
   const { error } = await admin
     .from("site_settings")
@@ -92,7 +92,7 @@ function sanitizeSnowflake(v: string): string {
 }
 
 export async function saveDiscordConfig(input: DiscordConfigInput) {
-  await assertAdmin();
+  await assertPermission("discord.manage");
   const admin = createAdminClient();
   const rows = (Object.keys(KEY_BY_FIELD) as (keyof DiscordConfigInput)[]).map(
     (field) => ({
@@ -121,7 +121,7 @@ export async function saveDiscordConfig(input: DiscordConfigInput) {
  * the UI can confirm.
  */
 export async function registerCommands(): Promise<{ names: string[] }> {
-  await assertAdmin();
+  await assertPermission("discord.manage");
   const registered = await discordRegisterCommands();
   const names = registered.map((c) => c.name);
   await logAudit({
@@ -145,7 +145,7 @@ export async function resyncAllRoles(): Promise<{
   attempted: number;
   succeeded: number;
 }> {
-  await assertAdmin();
+  await assertPermission("discord.manage");
   const admin = createAdminClient();
   const { data: rows, error } = await admin
     .from("profiles")
@@ -182,7 +182,7 @@ export async function refreshLinkedIdentities(): Promise<{
   attempted: number;
   succeeded: number;
 }> {
-  await assertAdmin();
+  await assertPermission("discord.manage");
   const admin = createAdminClient();
   const { data: rows, error } = await admin
     .from("profiles")
@@ -218,7 +218,7 @@ export async function refreshLinkedIdentities(): Promise<{
 export async function bootstrapDiscordServer(
   confirm: string,
 ): Promise<BootstrapResult> {
-  await assertAdmin();
+  await assertPermission("discord.manage");
   if (confirm !== "DELETE AND REBUILD") {
     throw new Error('Type "DELETE AND REBUILD" exactly to confirm.');
   }
@@ -264,7 +264,7 @@ export async function bootstrapDiscordServer(
 export async function pingChannel(
   which: "announcements" | "events" | "admin_feed",
 ) {
-  await assertAdmin();
+  await assertPermission("discord.manage");
   const settings = await getDiscordSettings();
   const channelId =
     which === "announcements"

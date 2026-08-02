@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import { runAction, type ActionResult } from "@/lib/action-result";
 
@@ -33,7 +33,7 @@ export async function saveSiteSettings(
   input: SiteSettingsInput,
 ): Promise<ActionResult> {
   return runAction({ name: "saveSiteSettings" }, async () => {
-    await assertAdmin();
+    await assertPermission("settings.manage");
 
     if (input.contact_email && !/^\S+@\S+\.\S+$/.test(input.contact_email)) {
       throw new Error("Contact email looks invalid");

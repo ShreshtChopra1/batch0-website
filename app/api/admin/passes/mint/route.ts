@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getProfile } from "@/lib/auth";
+import { viewerCan } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   hashPassCode,
@@ -46,8 +46,7 @@ const MAX_PER_REQUEST = 50;
  * out around 4.5MB and a 50-card zip is ~30MB.
  */
 export async function POST(request: NextRequest) {
-  const profile = await getProfile();
-  if (!profile || profile.role !== "admin") {
+  if (!(await viewerCan("passes.manage"))) {
     return NextResponse.json({ error: "Not authorised." }, { status: 403 });
   }
 

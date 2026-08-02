@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 
 export type ResourceInput = {
@@ -32,7 +32,7 @@ function validate(input: ResourceInput) {
 }
 
 export async function saveResource(input: ResourceInput): Promise<string> {
-  const { userId } = await assertAdmin();
+  const { userId } = await assertPermission("resources.manage");
   validate(input);
 
   const admin = createAdminClient();
@@ -77,7 +77,7 @@ export async function saveResource(input: ResourceInput): Promise<string> {
 }
 
 export async function deleteResource(id: string) {
-  await assertAdmin();
+  await assertPermission("resources.manage");
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("resources")

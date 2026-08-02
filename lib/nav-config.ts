@@ -29,16 +29,25 @@ import {
   Newspaper,
   Ticket,
   Flag,
+  KeyRound,
   Calendar as CalendarIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PRE_COHORT_ALLOWED_HREFS } from "@/lib/pre-cohort";
+import { can, type Capabilities, type Permission } from "@/lib/permissions";
 
 export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
   exact?: boolean;
+  /**
+   * Permission required to see this link. Admin items carry one so the
+   * sidebar shows exactly the pages the viewer can actually open — the same
+   * string the route guard checks (see ADMIN_ROUTE_PERMISSIONS). Items with
+   * no `perm` are visible to anyone who can reach the panel.
+   */
+  perm?: Permission;
 };
 
 // A NavGroup is a labeled subset of nav items rendered as a collapsible
@@ -170,65 +179,221 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
   {
     label: "Applicants & people",
     items: [
-      { href: "/admin/applications", label: "Applications", icon: Inbox },
+      {
+        href: "/admin/applications",
+        label: "Applications",
+        icon: Inbox,
+        perm: "applications.view",
+      },
       {
         href: "/admin/application-questions",
         label: "Application form",
         icon: FileText,
+        perm: "applications.form",
       },
-      { href: "/admin/students", label: "People", icon: Users },
-      { href: "/admin/mentors", label: "Mentors", icon: Handshake },
+      {
+        href: "/admin/students",
+        label: "People",
+        icon: Users,
+        perm: "people.view",
+      },
+      {
+        href: "/admin/mentors",
+        label: "Mentors",
+        icon: Handshake,
+        perm: "mentors.manage",
+      },
     ],
   },
   {
     label: "Cohorts & teams",
     items: [
-      { href: "/admin/cohorts", label: "Cohorts", icon: Calendar },
-      { href: "/admin/challenges", label: "Challenges", icon: Trophy },
-      { href: "/admin/teams", label: "Teams", icon: Briefcase },
-      { href: "/admin/demo-day", label: "Demo Day", icon: Rocket },
-      { href: "/admin/intros", label: "Intros", icon: Handshake },
+      {
+        href: "/admin/cohorts",
+        label: "Cohorts",
+        icon: Calendar,
+        perm: "cohorts.manage",
+      },
+      {
+        href: "/admin/challenges",
+        label: "Challenges",
+        icon: Trophy,
+        perm: "challenges.manage",
+      },
+      {
+        href: "/admin/teams",
+        label: "Teams",
+        icon: Briefcase,
+        perm: "teams.manage",
+      },
+      {
+        href: "/admin/demo-day",
+        label: "Demo Day",
+        icon: Rocket,
+        perm: "demoday.manage",
+      },
+      {
+        href: "/admin/intros",
+        label: "Intros",
+        icon: Handshake,
+        perm: "intros.manage",
+      },
     ],
   },
   {
     label: "Content",
     items: [
-      { href: "/admin/blog", label: "Blog", icon: Newspaper },
-      { href: "/admin/course", label: "Course", icon: BookOpen },
-      { href: "/admin/events", label: "Events", icon: CalendarDays },
-      { href: "/admin/resources", label: "Resources", icon: FolderArchive },
-      { href: "/admin/flows", label: "Pre-cohort flows", icon: Flag },
-      { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
+      { href: "/admin/blog", label: "Blog", icon: Newspaper, perm: "blog.manage" },
+      {
+        href: "/admin/course",
+        label: "Course",
+        icon: BookOpen,
+        perm: "course.manage",
+      },
+      {
+        href: "/admin/events",
+        label: "Events",
+        icon: CalendarDays,
+        perm: "events.manage",
+      },
+      {
+        href: "/admin/resources",
+        label: "Resources",
+        icon: FolderArchive,
+        perm: "resources.manage",
+      },
+      {
+        href: "/admin/flows",
+        label: "Pre-cohort flows",
+        icon: Flag,
+        perm: "flows.manage",
+      },
+      {
+        href: "/admin/announcements",
+        label: "Announcements",
+        icon: Megaphone,
+        perm: "announcements.manage",
+      },
     ],
   },
   {
     label: "Finance",
     items: [
-      { href: "/admin/charges", label: "Fees & fines", icon: CreditCard },
-      { href: "/admin/payments", label: "Payments", icon: CreditCard },
+      {
+        href: "/admin/charges",
+        label: "Fees & fines",
+        icon: CreditCard,
+        perm: "charges.manage",
+      },
+      {
+        href: "/admin/payments",
+        label: "Payments",
+        icon: CreditCard,
+        perm: "payments.view",
+      },
     ],
   },
   {
     label: "Operations",
     items: [
-      { href: "/admin/pulse", label: "Pulse", icon: Activity },
-      { href: "/admin/interventions", label: "At-risk", icon: ShieldCheck },
-      { href: "/admin/mentors/match", label: "Mentor match", icon: Sparkles },
-      { href: "/admin/ai-usage", label: "AI usage", icon: Sparkles },
-      { href: "/admin/email", label: "Email metrics", icon: Mail },
-      { href: "/admin/email/blast", label: "Email blast", icon: Send },
-      { href: "/admin/referrals", label: "Referrals", icon: Star },
-      { href: "/admin/passes", label: "Founder passes", icon: Ticket },
-      { href: "/admin/pass-requests", label: "Pass requests", icon: Inbox },
-      { href: "/admin/moderation", label: "Moderation", icon: ShieldCheck },
-      { href: "/admin/discord", label: "Discord", icon: MessagesSquare },
-      { href: "/admin/audit", label: "Audit log", icon: ScrollText },
-      { href: "/admin/settings", label: "Settings", icon: Settings },
+      { href: "/admin/pulse", label: "Pulse", icon: Activity, perm: "pulse.view" },
+      {
+        href: "/admin/interventions",
+        label: "At-risk",
+        icon: ShieldCheck,
+        perm: "interventions.manage",
+      },
+      {
+        href: "/admin/mentors/match",
+        label: "Mentor match",
+        icon: Sparkles,
+        perm: "mentors.manage",
+      },
+      {
+        href: "/admin/ai-usage",
+        label: "AI usage",
+        icon: Sparkles,
+        perm: "ai_usage.view",
+      },
+      {
+        href: "/admin/email",
+        label: "Email metrics",
+        icon: Mail,
+        perm: "email.view",
+      },
+      {
+        href: "/admin/email/blast",
+        label: "Email blast",
+        icon: Send,
+        perm: "email.send",
+      },
+      {
+        href: "/admin/referrals",
+        label: "Referrals",
+        icon: Star,
+        perm: "referrals.view",
+      },
+      {
+        href: "/admin/passes",
+        label: "Founder passes",
+        icon: Ticket,
+        perm: "passes.manage",
+      },
+      {
+        href: "/admin/pass-requests",
+        label: "Pass requests",
+        icon: Inbox,
+        perm: "passes.manage",
+      },
+      {
+        href: "/admin/moderation",
+        label: "Moderation",
+        icon: ShieldCheck,
+        perm: "moderation.manage",
+      },
+      {
+        href: "/admin/discord",
+        label: "Discord",
+        icon: MessagesSquare,
+        perm: "discord.manage",
+      },
+      {
+        href: "/admin/roles",
+        label: "Roles & permissions",
+        icon: KeyRound,
+        perm: "roles.manage",
+      },
+      {
+        href: "/admin/audit",
+        label: "Audit log",
+        icon: ScrollText,
+        perm: "audit.view",
+      },
+      {
+        href: "/admin/settings",
+        label: "Settings",
+        icon: Settings,
+        perm: "settings.manage",
+      },
     ],
   },
 ];
 
 export const ADMIN_NAV: NavItem[] = ADMIN_NAV_GROUPS.flatMap((g) => g.items);
+
+/**
+ * The one visibility predicate for admin nav items. Both the desktop sidebar
+ * and the mobile drawer call it with the viewer's permission list, so the two
+ * can't drift — and neither can drift from the route guard, since both read
+ * the same `perm` the guard checks.
+ */
+export function filterAdminNavItem(
+  item: NavItem,
+  caps: Capabilities | null,
+): boolean {
+  if (!item.perm) return true;
+  return can(caps, item.perm);
+}
 
 // ---------------------------------------------------------------------------
 // Mentor

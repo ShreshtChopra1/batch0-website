@@ -67,7 +67,7 @@ export default async function BlogPostPage({
   const { meta, html } = post;
 
   const [config, profile] = await Promise.all([getSiteConfig(), getProfile()]);
-  const authedHome = profile ? roleHome(profile.role) : null;
+  const authedHome = profile ? await roleHome(profile.role) : null;
   const cohortLabel = config.derived.cohortLabel || "the next cohort";
   const related = await getRelatedPosts(meta);
   const url = `${SITE}/blog/${meta.slug}`;

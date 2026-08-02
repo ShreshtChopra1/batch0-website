@@ -1,6 +1,8 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { capabilitiesForRole } from "@/lib/roles";
+import { can, canAccessAdmin } from "@/lib/permissions";
 import type { Role, ApplicationStatus } from "@/lib/types";
 import {
   computePreCohort,
@@ -11,12 +13,23 @@ import {
 } from "@/lib/pre-cohort";
 
 /**
- * Whether the current user is enrolled in any cohort. Admins are treated
+ * Staff previewing the student view. Anyone who can open the admin area gets
+ * the full dashboard so they can see what students see — the check is on the
+ * permission rather than the `admin` slug, so a custom role with admin access
+ * behaves the same way.
+ */
+async function isStaffPreview(role?: Role | null): Promise<boolean> {
+  if (!role) return false;
+  return canAccessAdmin(await capabilitiesForRole(role));
+}
+
+/**
+ * Whether the current user is enrolled in any cohort. Staff are treated
  * as enrolled so they can preview enrolled-only routes; mentors and
  * investors don't reach /dashboard so the answer doesn't matter for them.
  */
 export async function isEnrolled(role?: Role | null): Promise<boolean> {
-  if (role === "admin") return true;
+  if (await isStaffPreview(role)) return true;
   const supabase = createClient();
   const {
     data: { user },
@@ -42,6 +55,12 @@ export type StudentAccess = {
   applicationStatus: ApplicationStatus | null;
   /** Role of the current user, defaulting to "student". */
   role: Role;
+  /**
+   * Staff previewing the dashboard rather than a participant in it. Replaces
+   * the old `role === "admin"` test so a custom admin-area role behaves the
+   * same way.
+   */
+  staff: boolean;
   /**
    * Accepted (or enrolled) but the cohort hasn't started yet. Pre-cohort
    * students only get the personal pages — plus kickoff and pre-cohort
@@ -78,15 +97,27 @@ function embeddedCohort(c: unknown): NamedCohort | null {
 export const getStudentAccess = cache(async function getStudentAccess(
   role: Role = "student",
 ): Promise<StudentAccess> {
-  if (role === "admin") {
-    return { enrolled: true, applicationStatus: null, role, ...NO_PRE_COHORT };
+  if (await isStaffPreview(role)) {
+    return {
+      enrolled: true,
+      applicationStatus: null,
+      role,
+      staff: true,
+      ...NO_PRE_COHORT,
+    };
   }
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    return { enrolled: false, applicationStatus: null, role, ...NO_PRE_COHORT };
+    return {
+      enrolled: false,
+      applicationStatus: null,
+      role,
+      staff: false,
+      ...NO_PRE_COHORT,
+    };
   }
   const admin = createAdminClient();
   const [{ data: enrollments }, { data: app }] = await Promise.all([
@@ -140,6 +171,7 @@ export const getStudentAccess = cache(async function getStudentAccess(
     enrolled,
     applicationStatus,
     role,
+    staff: false,
     preCohort,
     cohortStartsOn,
     cohortName,
@@ -153,7 +185,7 @@ export const getStudentAccess = cache(async function getStudentAccess(
  * personal pages.
  */
 export function aiAccessFrom(access: StudentAccess): boolean {
-  if (access.role !== "student") return true;
+  if (access.staff) return true;
   if (access.preCohort) return false;
   return isAcceptedStatus(access.applicationStatus);
 }
@@ -164,7 +196,12 @@ export function aiAccessFrom(access: StudentAccess): boolean {
  * passed admin review (accepted / paid / enrolled) and a started cohort.
  */
 export async function canUseAi(role: Role): Promise<boolean> {
-  if (role === "admin" || role === "mentor" || role === "investor") {
+  const caps = await capabilitiesForRole(role);
+  if (
+    canAccessAdmin(caps) ||
+    can(caps, "mentor.panel") ||
+    can(caps, "investor.panel")
+  ) {
     return true;
   }
   return aiAccessFrom(await getStudentAccess(role));

@@ -11,8 +11,10 @@ import {
   INVESTOR_NAV_GROUPS,
   STAFF_LINKS,
   filterStudentNavItem,
+  filterAdminNavItem,
   type NavGroup,
 } from "@/lib/nav-config";
+import { can, canAccessAdmin, type Capabilities } from "@/lib/permissions";
 import type { Role } from "@/lib/types";
 import { NotificationBell } from "@/components/notification-bell";
 
@@ -64,6 +66,7 @@ const LABEL_BY_KIND: Record<MobileNavKind, string | undefined> = {
 export function MobileNav({
   kind,
   role,
+  caps,
   aiAccess,
   discordEnabled,
   enrolled = true,
@@ -72,6 +75,8 @@ export function MobileNav({
 }: {
   kind: MobileNavKind;
   role?: Role;
+  /** Viewer permissions. Drives admin nav filtering and the cross-panel links. */
+  caps?: Capabilities | null;
   aiAccess?: boolean;
   discordEnabled?: boolean;
   enrolled?: boolean;
@@ -160,11 +165,12 @@ export function MobileNav({
               }
             }
             if (kind === "admin") {
-              // Admins keep the link visible when referrals are paused so
-              // they can audit historical referral data; the page itself
-              // shows a "paused" banner. Only filter it when explicitly
-              // turned off AND we want a totally clean nav — current
-              // policy is to keep it.
+              // Same permission predicate as the desktop sidebar, so the
+              // drawer shows exactly the pages this person can open.
+              // (Referrals stays visible whenever the permission is held
+              // even if referrals are paused — the page itself explains
+              // the pause and the historical data is still worth reading.)
+              if (!filterAdminNavItem(it, caps ?? null)) return false;
             }
             return true;
           })
@@ -175,6 +181,7 @@ export function MobileNav({
   }, [
     rawGroups,
     kind,
+    caps,
     aiAccess,
     discordEnabled,
     enrolled,
@@ -191,14 +198,20 @@ export function MobileNav({
     [pathname, rawGroups],
   );
 
+  // Cross-panel links. Permission-driven when the layout passed capabilities
+  // down; the role comparison is the fallback for any caller that hasn't been
+  // updated, and matches what those roles could reach before roles became data.
   const extras: { href: string; label: string; icon: any }[] = [];
-  if (role === "admin" && kind !== "admin") extras.push(STAFF_LINKS.admin);
-  if ((role === "admin" || role === "mentor") && kind !== "mentor") {
-    extras.push(STAFF_LINKS.mentor);
-  }
-  if ((role === "admin" || role === "investor") && kind !== "investor") {
-    extras.push(STAFF_LINKS.investor);
-  }
+  const reachesAdmin = caps ? canAccessAdmin(caps) : role === "admin";
+  const reachesMentor = caps
+    ? can(caps, "mentor.panel")
+    : role === "admin" || role === "mentor";
+  const reachesInvestor = caps
+    ? can(caps, "investor.panel")
+    : role === "admin" || role === "investor";
+  if (reachesAdmin && kind !== "admin") extras.push(STAFF_LINKS.admin);
+  if (reachesMentor && kind !== "mentor") extras.push(STAFF_LINKS.mentor);
+  if (reachesInvestor && kind !== "investor") extras.push(STAFF_LINKS.investor);
 
   function toggleGroup(label: string) {
     setCollapsed((p) => ({ ...p, [label]: !p[label] }));

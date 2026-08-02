@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getProfile } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
+import { getAllRoles, capabilitiesForRole } from "@/lib/roles";
+import { can, covers, roleColorClasses } from "@/lib/permissions";
 import { Card, StatusBadge } from "@/components/ui/card";
 import { LocalTime } from "@/components/ui/local-time";
 import { RoleSelect } from "../role-select";
@@ -24,8 +26,16 @@ export default async function AdminStudentDetail({
 }: {
   params: { id: string };
 }) {
-  const actor = await getProfile();
+  const { profile: actor, caps } = await requirePermission("people.view");
   const admin = createAdminClient();
+
+  // Assignable roles are capped by what the viewer holds, mirroring the
+  // server action; a viewer without `people.roles` gets a read-only badge.
+  const canChangeRoles = can(caps, "people.roles");
+  const allRoles = await getAllRoles();
+  const roleOptions = allRoles
+    .filter((r) => covers(caps, r.permissions))
+    .map((r) => ({ slug: r.slug, label: r.label, color: r.color }));
   const siteConfig = await getSiteConfig();
   const referralsEnabled = siteConfig.settings.referralsEnabled;
 
@@ -66,6 +76,9 @@ export default async function AdminStudentDetail({
   ]);
 
   if (!profile) notFound();
+
+  // Deleting a full-access account is blocked server-side; mirror that here.
+  const targetCaps = await capabilitiesForRole(profile.role);
 
   const latestApp = (applications ?? [])[0] as any;
   const currentEnrollment = (enrollments ?? [])[0] as any;
@@ -115,7 +128,22 @@ export default async function AdminStudentDetail({
           <span className="text-xs uppercase tracking-wider text-ink-faint">
             Role
           </span>
-          <RoleSelect userId={profile.id} role={profile.role as Role} />
+          {canChangeRoles ? (
+            <RoleSelect
+              userId={profile.id}
+              role={profile.role as Role}
+              options={roleOptions}
+            />
+          ) : (
+            <span
+              className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium uppercase tracking-wider ${roleColorClasses(
+                allRoles.find((r) => r.slug === profile.role)?.color ?? "slate",
+              )}`}
+            >
+              {allRoles.find((r) => r.slug === profile.role)?.label ??
+                profile.role}
+            </span>
+          )}
         </div>
       </div>
 
@@ -143,7 +171,7 @@ export default async function AdminStudentDetail({
         <ManagePanel
           userId={profile.id}
           isSelf={actor?.id === profile.id}
-          isAdminTarget={profile.role === "admin"}
+          isAdminTarget={targetCaps.superAdmin}
           hasRefundable={hasRefundable}
           cohorts={(cohorts ?? []) as any}
           currentCohortId={

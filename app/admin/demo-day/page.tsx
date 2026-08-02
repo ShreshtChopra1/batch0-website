@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DemoDayDiscordThreadsButton } from "./discord-threads-button";
@@ -8,7 +8,7 @@ import { DemoDayDiscordThreadsButton } from "./discord-threads-button";
 export const metadata = { title: "Demo Day · Admin" };
 
 export default async function AdminDemoDayPage() {
-  await requireAdmin();
+  await requirePermission("demoday.manage");
   const admin = createAdminClient();
 
   const [

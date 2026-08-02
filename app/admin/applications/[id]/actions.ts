@@ -6,7 +6,7 @@ import {
   FOUNDER_PASS_TUITION_DISCOUNT_CENTS,
 } from "@/lib/founder-pass";
 import { markRebuildReviewedForUser } from "@/lib/founder-pass-perks";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { sendEmail } from "@/lib/email/send";
 import { Templates } from "@/lib/email/templates";
 import { notify } from "@/lib/notifications";
@@ -30,7 +30,7 @@ export async function decideApplication(
   // back to the free-text notes guarantee below.
   feedback?: StructuredFeedback,
 ) {
-  const { userId: reviewerId } = await assertAdmin();
+  const { userId: reviewerId } = await assertPermission("applications.review");
   const admin = createAdminClient();
 
   // Fetch first so we can email + notify with full context. Note: we
@@ -275,7 +275,7 @@ export async function bulkDecideApplications(input: {
   decision: "accepted" | "rejected" | "waitlisted";
   notes: string;
 }): Promise<{ succeeded: number; failed: number; skipped: number }> {
-  await assertAdmin();
+  await assertPermission("applications.review");
   if (!input.applicationIds.length) {
     return { succeeded: 0, failed: 0, skipped: 0 };
   }
@@ -335,7 +335,7 @@ export async function bulkDecideApplications(input: {
 }
 
 export async function reopenApplication(applicationId: string) {
-  await assertAdmin();
+  await assertPermission("applications.review");
   const admin = createAdminClient();
   const { error } = await admin
     .from("applications")
@@ -364,7 +364,7 @@ export async function waiveApplicationFee(
   applicationId: string,
   reason: string,
 ) {
-  const { userId: actorId } = await assertAdmin();
+  const { userId: actorId } = await assertPermission("charges.manage");
   const admin = createAdminClient();
 
   const { data: app, error: fetchErr } = await admin

@@ -8,11 +8,13 @@ import {
   STAFF_LINKS,
   filterStudentNavItem,
 } from "@/lib/nav-config";
+import { canAccessAdmin, type Capabilities } from "@/lib/permissions";
 import { NotificationBell } from "@/components/notification-bell";
 import { SidebarNav, SIDEBAR_ROW } from "@/components/sidebar-nav";
 
 export function StudentSidebar({
   role,
+  caps,
   aiAccess,
   discordEnabled,
   enrolled,
@@ -20,13 +22,17 @@ export function StudentSidebar({
   preCohort,
 }: {
   role: Role;
+  caps?: Capabilities | null;
   aiAccess: boolean;
   discordEnabled: boolean;
   enrolled: boolean;
   referralsEnabled: boolean;
   preCohort: boolean;
 }) {
-  const showAdminBack = role === "admin";
+  // Permission-driven when the layout passed capabilities down. The role
+  // comparison stays as the fallback so any caller that hasn't been updated
+  // behaves exactly as it did before roles became data.
+  const showAdminBack = caps ? canAccessAdmin(caps) : role === "admin";
 
   return (
     <aside className="hidden md:flex md:sticky md:top-0 md:h-screen w-60 shrink-0 flex-col border-r border-line bg-wash px-4 py-6 overflow-hidden">

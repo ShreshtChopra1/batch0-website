@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { stripe } from "@/lib/stripe";
 import { logAudit } from "@/lib/audit";
 import { runAction, type ActionResult } from "@/lib/action-result";
@@ -101,7 +101,7 @@ export async function saveCohort(
   input: CohortInput,
 ): Promise<ActionResult<{ id: string }>> {
   return runAction({ name: "saveCohort" }, async () => {
-    await assertAdmin();
+    await assertPermission("cohorts.manage");
 
     // Validate up front so the action returns a friendly message rather
     // than a raw Postgres constraint error.
@@ -240,7 +240,7 @@ export async function saveCohort(
 
 export async function deleteCohort(id: string): Promise<ActionResult> {
   return runAction({ name: "deleteCohort" }, async () => {
-    await assertAdmin();
+    await assertPermission("cohorts.manage");
     const admin = createAdminClient();
 
     const { data: cohort } = await admin

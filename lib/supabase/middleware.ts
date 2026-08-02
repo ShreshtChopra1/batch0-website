@@ -6,6 +6,14 @@ import {
   isAcceptedStatus,
   type PreCohortCohort,
 } from "@/lib/pre-cohort";
+import {
+  can,
+  canAccessAdmin,
+  canViewAdminPath,
+  capabilitiesFrom,
+  resolveHome,
+  type Capabilities,
+} from "@/lib/permissions";
 
 type CookiesToSet = {
   name: string;
@@ -13,22 +21,27 @@ type CookiesToSet = {
   options: CookieOptions;
 }[];
 
-// Mirrored from lib/auth.ts:roleHome — kept inline so middleware doesn't
-// pull in lib/auth.ts (which transitively imports next/headers + the
-// admin/service-role client and isn't Edge-safe).
-type RoleLike = "student" | "admin" | "mentor" | "investor" | string | null | undefined;
-function roleHome(role: RoleLike): string {
-  switch (role) {
-    case "admin":
-      return "/admin";
-    case "mentor":
-      return "/mentor";
-    case "investor":
-      return "/investor";
-    default:
-      return "/dashboard";
-  }
-}
+/**
+ * Permissions for the four system roles, without a database round trip.
+ *
+ * Only used when `app_roles` can't be read — migration 0048 not applied yet,
+ * or a transient failure. Mirrors the seed in that migration and the fallback
+ * in lib/roles.ts, so an un-migrated deploy gates exactly as it did before
+ * roles became data rather than locking everyone out.
+ */
+const FALLBACK_PERMISSIONS: Record<string, string[]> = {
+  student: ["student.dashboard"],
+  admin: ["*"],
+  mentor: ["mentor.panel"],
+  investor: ["investor.panel"],
+};
+
+const FALLBACK_HOME: Record<string, string> = {
+  student: "/dashboard",
+  admin: "/admin",
+  mentor: "/mentor",
+  investor: "/investor",
+};
 
 export async function updateSession(request: NextRequest) {
   // Stamp the request pathname onto a header so downstream server
@@ -123,20 +136,49 @@ export async function updateSession(request: NextRequest) {
     );
   }
 
-  if (authPath && user) {
-    // Send signed-in users to their role home rather than always /dashboard,
-    // since /dashboard is now student-only and would otherwise bounce again.
+  /**
+   * Role + permissions for the signed-in user, resolved once and reused by
+   * every gate below. Roles are data since migration 0048, so "what can this
+   * person reach" is a permission lookup rather than a slug comparison —
+   * that's what lets a custom role like `intern` into part of /admin.
+   */
+  type Resolved = { caps: Capabilities; home: string };
+  let resolved: Resolved | null = null;
+  async function loadCapabilities(userId: string): Promise<Resolved> {
+    if (resolved) return resolved;
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
-      .eq("id", user.id)
+      .eq("id", userId)
       .maybeSingle();
-    return redirectTo(roleHome(profile?.role));
+    const role = (profile?.role as string) ?? "student";
+    const { data: roleRow, error } = await supabase
+      .from("app_roles")
+      .select("permissions, home_path")
+      .eq("slug", role)
+      .maybeSingle();
+    const caps =
+      error || !roleRow
+        ? capabilitiesFrom(role, FALLBACK_PERMISSIONS[role] ?? [])
+        : capabilitiesFrom(role, roleRow.permissions as string[]);
+    const storedHome =
+      error || !roleRow
+        ? (FALLBACK_HOME[role] ?? null)
+        : ((roleRow.home_path as string) ?? null);
+    resolved = { caps, home: resolveHome(caps, storedHome) };
+    return resolved;
   }
 
-  // Hard-block: any non-admin signed-in user with a pending fine can
-  // only reach the pay-fine screen + billing + signout until paid or
-  // waived. Admins bypass so they can still hit /admin to waive.
+  if (authPath && user) {
+    // Send signed-in users to their role home rather than always /dashboard,
+    // since /dashboard is now participant-only and would otherwise bounce again.
+    const { home } = await loadCapabilities(user.id);
+    return redirectTo(home);
+  }
+
+  // Hard-block: any signed-in user with a pending fine can only reach the
+  // pay-fine screen + billing + signout until it's paid or waived. Full
+  // admins bypass so they can still hit /admin to waive.
   if (
     user &&
     (path.startsWith("/dashboard") ||
@@ -156,12 +198,8 @@ export async function updateSession(request: NextRequest) {
       .limit(1)
       .maybeSingle();
     if (pendingFine) {
-      const { data: blockProfile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (blockProfile?.role !== "admin") {
+      const { caps } = await loadCapabilities(user.id);
+      if (!caps.superAdmin) {
         return redirectTo("/dashboard/pay-fine");
       }
     }
@@ -174,42 +212,42 @@ export async function updateSession(request: NextRequest) {
       path.startsWith("/investor")) &&
     user
   ) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-    const role = profile?.role;
-    // /dashboard is the student area. Mentors and investors get bounced
-    // to their own panel — they have no business in the student view.
-    // Admins are allowed through as an opt-in (the admin sidebar has a
-    // "Student view" link), but their default home stays /admin.
-    // Billing + pay-fine are shared per-user views every role can reach.
+    const { caps, home } = await loadCapabilities(user.id);
+
+    // /dashboard is the participant area, gated by `student.dashboard`.
+    // Mentors and investors get bounced to their own panel — they have no
+    // business in the student view. Admins hold the wildcard and are allowed
+    // through as an opt-in (the admin sidebar has a "Student view" link), but
+    // their default home stays /admin. Billing + pay-fine are shared per-user
+    // views every role can reach.
     if (
       path.startsWith("/dashboard") &&
       !path.startsWith("/dashboard/pay-fine") &&
       !path.startsWith("/dashboard/billing") &&
-      role !== "student" &&
-      role !== "admin"
+      !can(caps, "student.dashboard") &&
+      // Never bounce /dashboard at /dashboard. A role with no permissions at
+      // all resolves its home to /dashboard, and redirecting there would spin
+      // forever; the dashboard layout renders bare chrome for these viewers
+      // instead, which is a dead end rather than a loop.
+      home !== "/dashboard"
     ) {
-      return redirectTo(roleHome(role));
+      return redirectTo(home);
     }
-    if (path.startsWith("/admin") && role !== "admin") {
-      return redirectTo(roleHome(role));
+    // /admin is permission-gated per route: `canViewAdminPath` first checks
+    // the person belongs in the admin area at all, then that they hold the
+    // specific permission that route needs (see ADMIN_ROUTE_PERMISSIONS).
+    // The admin layout re-checks the same predicate server-side.
+    if (path.startsWith("/admin") && !canViewAdminPath(caps, path)) {
+      // Someone who belongs in /admin but not on this page lands on the
+      // overview, which they can always read — bouncing them out of the
+      // panel entirely would be a dead end.
+      return redirectTo(canAccessAdmin(caps) ? "/admin" : home);
     }
-    if (
-      path.startsWith("/mentor") &&
-      role !== "admin" &&
-      role !== "mentor"
-    ) {
-      return redirectTo(roleHome(role));
+    if (path.startsWith("/mentor") && !can(caps, "mentor.panel")) {
+      return redirectTo(home);
     }
-    if (
-      path.startsWith("/investor") &&
-      role !== "admin" &&
-      role !== "investor"
-    ) {
-      return redirectTo(roleHome(role));
+    if (path.startsWith("/investor") && !can(caps, "investor.panel")) {
+      return redirectTo(home);
     }
 
     // Pre-cohort lockdown: an accepted (or already-enrolled) student whose
@@ -219,9 +257,10 @@ export async function updateSession(request: NextRequest) {
     // links too; this is the hard server-side gate, so a typed URL, a
     // stale link, or a prefetch can't reach past the designated pages.
     // Decision logic is shared with lib/access.ts via lib/pre-cohort.ts.
+    // Staff previewing the student view are exempt.
     if (
       path.startsWith("/dashboard") &&
-      role !== "admin" &&
+      !canAccessAdmin(caps) &&
       !isPreCohortAllowedPath(path)
     ) {
       // Two parallel queries; the cohort rows ride along as embeds. On any

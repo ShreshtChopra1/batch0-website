@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { stripe } from "@/lib/stripe";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import { reconcileStripe } from "@/lib/stripe-reconcile";
 import {
@@ -24,7 +24,7 @@ import {
  * payment. Rows, statuses, enrollments, and receipts are all still fixed.
  */
 export async function reconcileStripeNow(input?: { days?: number }) {
-  await assertAdmin();
+  await assertPermission("payments.manage");
   const days = input?.days;
   const summary = await reconcileStripe({
     sinceUnix: days
@@ -45,7 +45,7 @@ export async function reconcileStripeNow(input?: { days?: number }) {
 }
 
 export async function refundPayment(paymentId: string, reason?: string) {
-  await assertAdmin();
+  await assertPermission("payments.manage");
   const admin = createAdminClient();
   const { data: p, error: fetchErr } = await admin
     .from("payments")

@@ -1,6 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { assertPermission } from "@/lib/server-guards";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAudit } from "@/lib/audit";
 
@@ -15,7 +15,7 @@ export type ActionResult = { ok: true; message: string } | { ok: false; error: s
  * that number is still in someone's pocket.
  */
 export async function revokePassAction(serial: number): Promise<ActionResult> {
-  await requireAdmin();
+  await assertPermission("passes.manage");
   const admin = createAdminClient();
 
   const { data, error } = await admin
@@ -54,7 +54,7 @@ export async function revokePassAction(serial: number): Promise<ActionResult> {
  * without touching cards from any other run.
  */
 export async function revokeBatchAction(batch: string): Promise<ActionResult> {
-  await requireAdmin();
+  await assertPermission("passes.manage");
   const admin = createAdminClient();
 
   const { data, error } = await admin

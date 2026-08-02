@@ -60,7 +60,7 @@ export default async function BlogIndexPage() {
     getProfile(),
     getAllPostsMeta(),
   ]);
-  const authedHome = profile ? roleHome(profile.role) : null;
+  const authedHome = profile ? await roleHome(profile.role) : null;
   const cohortLabel = config.derived.cohortLabel || "the next cohort";
 
   // Blog collection JSON-LD — lets search + AI engines understand this is a

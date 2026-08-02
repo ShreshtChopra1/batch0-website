@@ -31,7 +31,7 @@ const why = (capacityLabel: string) => [
 
 export default async function SponsorsPage() {
   const [config, profile] = await Promise.all([getSiteConfig(), getProfile()]);
-  const authedHome = profile ? roleHome(profile.role) : null;
+  const authedHome = profile ? await roleHome(profile.role) : null;
 
   return (
     <main className="min-h-screen bg-paper">

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Card, StatusBadge } from "@/components/ui/card";
 import { LocalTime } from "@/components/ui/local-time";
@@ -21,7 +21,7 @@ export default async function SubmissionDetailPage({
 }: {
   params: { id: string; submissionId: string };
 }) {
-  await requireAdmin();
+  await requirePermission("challenges.manage");
   const admin = createAdminClient();
 
   const { data } = await admin

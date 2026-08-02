@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Card } from "@/components/ui/card";
+import { requirePermission } from "@/lib/auth";
+import { getAllRoles } from "@/lib/roles";
+import { can, covers } from "@/lib/permissions";
 import { StudentsBulkList } from "./bulk-list";
 import type { Role } from "@/lib/types";
 
@@ -11,17 +14,21 @@ export const metadata = { title: "People · Admin" };
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const FILTERS = ["all", "student", "mentor", "investor", "admin"] as const;
-type RoleFilter = (typeof FILTERS)[number];
-
 export default async function AdminStudentsPage({
   searchParams,
 }: {
   searchParams: { role?: string };
 }) {
+  const { caps } = await requirePermission("people.view");
   const admin = createAdminClient();
-  const filter = (FILTERS.find((f) => f === searchParams.role) ??
-    "all") as RoleFilter;
+
+  // Filter tabs come from the roles table, so a role created at /admin/roles
+  // shows up here — with its own tab and count — without a code change.
+  const roles = await getAllRoles();
+  const filter =
+    searchParams.role && roles.some((r) => r.slug === searchParams.role)
+      ? searchParams.role
+      : "all";
 
   let q = admin
     .from("profiles")
@@ -40,8 +47,16 @@ export default async function AdminStudentsPage({
     .from("profiles")
     .select("role")
     .limit(5000);
-  const roleCount = (role: Role) =>
-    (counts ?? []).filter((r: any) => r.role === role).length;
+  const roleCount = (slug: string) =>
+    (counts ?? []).filter((r: any) => r.role === slug).length;
+
+  // Assignable roles are capped by what the viewer holds — the same rule the
+  // server action enforces, surfaced early so the picker never offers an
+  // option that would be rejected.
+  const canChangeRoles = can(caps, "people.roles");
+  const roleOptions = roles
+    .filter((r) => covers(caps, r.permissions))
+    .map((r) => ({ slug: r.slug, label: r.label, color: r.color }));
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -49,8 +64,20 @@ export default async function AdminStudentsPage({
         <div>
           <h1 className="font-display text-3xl font-bold tracking-[-0.02em] text-ink">People</h1>
           <p className="mt-1 text-sm text-ink-faint">
-            Everyone with an account. Change a role inline to grant or revoke
-            access.
+            {canChangeRoles ? (
+              <>
+                Everyone with an account. Change a role inline to grant or
+                revoke access — no application needed.{" "}
+                <Link
+                  href="/admin/roles"
+                  className="text-phosphor-ink hover:underline"
+                >
+                  Manage roles →
+                </Link>
+              </>
+            ) : (
+              <>Everyone with an account.</>
+            )}
           </p>
         </div>
         <a
@@ -63,23 +90,30 @@ export default async function AdminStudentsPage({
 
       {/* Role tabs with counts */}
       <div className="mt-6 flex flex-wrap gap-2">
-        {FILTERS.map((f) => {
-          const active = filter === f;
+        {[{ slug: "all", label: "All" }, ...roles].map((f) => {
+          const active = filter === f.slug;
           const count =
-            f === "all"
-              ? counts?.length ?? 0
-              : roleCount(f as Role);
+            f.slug === "all" ? counts?.length ?? 0 : roleCount(f.slug);
+          // Hide empty tabs for custom roles so the row doesn't grow a tail of
+          // zeroes; the built-ins always show so their absence isn't confusing.
+          const isBuiltIn =
+            f.slug === "all" || roles.find((r) => r.slug === f.slug)?.is_system;
+          if (!isBuiltIn && count === 0 && !active) return null;
           return (
             <Link
-              key={f}
-              href={f === "all" ? "/admin/students" : `/admin/students?role=${f}`}
+              key={f.slug}
+              href={
+                f.slug === "all"
+                  ? "/admin/students"
+                  : `/admin/students?role=${f.slug}`
+              }
               className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wider transition ${
                 active
                   ? "border-phosphor/30 bg-phosphor/10 text-phosphor-ink"
                   : "border-line text-ink-soft hover:border-ink/30 hover:text-ink"
               }`}
             >
-              {f === "all" ? "All" : f + "s"} · {count}
+              {f.label} · {count}
             </Link>
           );
         })}
@@ -87,6 +121,8 @@ export default async function AdminStudentsPage({
 
       <Card className="mt-6 !p-0 overflow-hidden">
         <StudentsBulkList
+          canChangeRoles={canChangeRoles}
+          roleOptions={roleOptions}
           rows={(profiles ?? []).map((p: any) => {
             const latestApp = (p.applications ?? [])[0];
             const enrollment = (p.enrollments ?? [])[0];

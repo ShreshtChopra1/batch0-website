@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { getProfile } from "@/lib/auth";
+import { getViewer } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { getStudentAccess, aiAccessFrom } from "@/lib/access";
 import { isDiscordEnabled } from "@/lib/discord";
 import { StudentSidebar } from "@/components/dashboard/sidebar";
@@ -11,15 +12,16 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const profile = await getProfile();
-  if (!profile) redirect("/login");
+  const viewer = await getViewer();
+  if (!viewer) redirect("/login");
+  const { profile, caps } = viewer;
   // Theme driven site-wide by next-themes on <html> (see ThemeProvider).
 
-  // Middleware gates /dashboard to students and admins. Mentors and
-  // investors only land here when middleware sent them to a shared
-  // subroute (pay-fine / billing); render those without the student
-  // sidebar so the chrome doesn't mislead.
-  if (profile.role === "mentor" || profile.role === "investor") {
+  // Middleware gates /dashboard to roles carrying `student.dashboard` (plus
+  // admins, via the wildcard). Anyone else only lands here when middleware
+  // sent them to a shared subroute (pay-fine / billing); render those without
+  // the student sidebar so the chrome doesn't mislead.
+  if (!can(caps, "student.dashboard")) {
     return (
       <div className="min-h-screen bg-paper text-ink">
         <main className="px-5 py-6 md:px-10 md:py-10">{children}</main>
@@ -50,6 +52,7 @@ export default async function DashboardLayout({
     >
       <StudentSidebar
         role={profile.role}
+        caps={caps}
         aiAccess={aiAccess}
         discordEnabled={discordEnabled}
         enrolled={enrolled}
@@ -60,6 +63,7 @@ export default async function DashboardLayout({
         <MobileNav
           kind="student"
           role={profile.role}
+          caps={caps}
           aiAccess={aiAccess}
           discordEnabled={discordEnabled}
           enrolled={enrolled}

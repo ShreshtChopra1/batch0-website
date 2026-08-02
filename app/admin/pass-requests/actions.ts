@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertAdmin } from "@/lib/server-guards";
+import { assertPermission } from "@/lib/server-guards";
 import { notify } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
 import { sendEmail } from "@/lib/email/send";
@@ -19,7 +19,7 @@ export async function fulfillFeedbackRequest(input: {
   status: "scheduled" | "delivered" | "declined";
   response: string;
 }) {
-  const { userId: adminId } = await assertAdmin();
+  const { userId: adminId } = await assertPermission("passes.manage");
   const admin = createAdminClient();
 
   const response = (input.response ?? "").trim();
