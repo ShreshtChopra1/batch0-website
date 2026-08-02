@@ -11,7 +11,8 @@
     "mint-cards": "node --env-file=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/mint-cards.mts",
     "seed-flows": "node --env-file=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/seed-flows.mts",
     "verify-roles": "node --env-file=.env.local scripts/verify-roles.mjs",
-    "e2e-roles": "node --env-file=.env.local scripts/e2e-roles.mjs"
+    "e2e-roles": "node --env-file=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/e2e-roles.mts",
+    "test-blast-addressing": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-blast-addressing.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",

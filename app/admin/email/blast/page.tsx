@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
 import { BlastForm } from "./blast-form";
+import { STATUS_RANK, pickParentEmail } from "./shared";
 
 export const metadata = { title: "Email blast · Admin" };
 export const dynamic = "force-dynamic";
@@ -18,18 +19,15 @@ export type BlastRecipient = {
   appStatus: string | null;
   /** Names of cohorts the user is enrolled in. */
   cohorts: string[];
-};
-
-// Application lifecycle rank — used to collapse a user's multiple
-// applications down to their furthest-along status for filtering.
-const STATUS_RANK: Record<string, number> = {
-  enrolled: 6,
-  paid: 5,
-  accepted: 4,
-  waitlisted: 3,
-  submitted: 2,
-  rejected: 1,
-  draft: 0,
+  /**
+   * Parent / guardian address from their application, if they gave one. The
+   * question is optional (and only asked of under-18s), so plenty of people
+   * won't have one — the form says so rather than silently dropping them.
+   *
+   * Display only: sendBlast re-resolves this server-side from the profile id,
+   * so a tampered request can't redirect a blast to an arbitrary address.
+   */
+  parentEmail: string | null;
 };
 
 export default async function AdminEmailBlastPage() {
@@ -37,7 +35,7 @@ export default async function AdminEmailBlastPage() {
   const { data: profiles } = await admin
     .from("profiles")
     .select(
-      "id, email, full_name, role, applications!applications_user_id_fkey(status), enrollments!enrollments_user_id_fkey(cohort:cohorts(name))",
+      "id, email, full_name, role, applications!applications_user_id_fkey(status, parent_email, created_at), enrollments!enrollments_user_id_fkey(cohort:cohorts(name))",
     )
     .order("created_at", { ascending: false })
     .limit(5000);
@@ -66,6 +64,7 @@ export default async function AdminEmailBlastPage() {
         role: p.role,
         appStatus,
         cohorts,
+        parentEmail: pickParentEmail(p.applications ?? []),
       };
     });
 
@@ -74,11 +73,10 @@ export default async function AdminEmailBlastPage() {
       <div>
         <h1 className="font-display text-3xl font-bold tracking-[-0.02em] text-ink">Email blast</h1>
         <p className="mt-1 text-sm text-ink-soft">
-          Compose a branded email and send it to any set of students. Use{" "}
-          <code className="rounded bg-wash px-1 font-mono text-phosphor-ink">
-            {"{{name}}"}
-          </code>{" "}
-          to personalize with each recipient&apos;s first name.
+          Compose a branded email and send it to any set of students — or to
+          their parents. Pick the group with the filters, then choose whether
+          it reaches the student, the parent / guardian on their application,
+          or both.
         </p>
       </div>
       <BlastForm recipients={recipients} siteUrl={env.siteUrl} />

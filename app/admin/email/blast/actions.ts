@@ -6,6 +6,15 @@ import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import { sendEmail, sendEmailBatch } from "@/lib/email/send";
 import { Templates } from "@/lib/email/templates";
+import {
+  buildEnvelopes,
+  firstName,
+  joinNames,
+  personalize,
+  pickParentEmail,
+  type BlastAudience,
+  type BlastVariant,
+} from "./shared";
 
 export type BlastDraft = {
   subject: string;
@@ -13,6 +22,8 @@ export type BlastDraft = {
   ctaLabel?: string;
   ctaUrl?: string;
 };
+
+export type { BlastAudience, BlastVariant };
 
 export type BlastSendResult =
   | {
@@ -25,15 +36,6 @@ export type BlastSendResult =
 // Hard ceiling per blast. Well above any realistic cohort size; exists
 // so a bugged "select everyone" click can't turn into a spam cannon.
 const MAX_RECIPIENTS = 1000;
-
-function firstName(full: string | null | undefined): string {
-  const first = (full ?? "").trim().split(/\s+/)[0];
-  return first || "there";
-}
-
-function personalize(text: string, name: string): string {
-  return text.split("{{name}}").join(name);
-}
 
 /**
  * Server actions can't safely throw (messages are masked in prod), so
@@ -70,12 +72,16 @@ function validateDraft(
 /** Render the branded HTML for the live preview pane. */
 export async function renderBlastPreview(
   draft: BlastDraft,
+  variant: BlastVariant = "student",
 ): Promise<{ ok: true; html: string } | { ok: false; error: string }> {
   await assertPermission("email.send");
   const v = validateDraft(draft);
   if (!v.ok) return v;
   const { html } = Templates.blast({
-    bodyText: personalize(v.body, "Alex"),
+    bodyText:
+      variant === "parent"
+        ? personalize(v.body, "there", "Alex")
+        : personalize(v.body, "Alex", "Alex"),
     preheader: v.subject,
     cta: v.cta,
   });
@@ -85,6 +91,7 @@ export async function renderBlastPreview(
 /** Send the draft to the signed-in admin only — a real end-to-end test. */
 export async function sendTestBlast(
   draft: BlastDraft,
+  variant: BlastVariant = "student",
 ): Promise<{ ok: boolean; message: string }> {
   await assertPermission("email.send");
   const v = validateDraft(draft);
@@ -96,14 +103,18 @@ export async function sendTestBlast(
   } = await supabase.auth.getUser();
   if (!user?.email) return { ok: false, message: "No email on your account." };
 
+  const me = firstName(user.user_metadata?.full_name);
   const { html } = Templates.blast({
-    bodyText: personalize(v.body, firstName(user.user_metadata?.full_name)),
+    bodyText:
+      variant === "parent"
+        ? personalize(v.body, "there", me)
+        : personalize(v.body, me, me),
     preheader: v.subject,
     cta: v.cta,
   });
   const result = await sendEmail({
     to: user.email,
-    subject: `[TEST] ${v.subject}`,
+    subject: `[TEST${variant === "parent" ? " · parent copy" : ""}] ${v.subject}`,
     html,
   });
   return result.ok
@@ -121,6 +132,7 @@ export async function sendTestBlast(
 export async function sendBlast(
   recipientIds: string[],
   draft: BlastDraft,
+  audience: BlastAudience = "students",
 ): Promise<BlastSendResult> {
   const { userId } = await assertPermission("email.send");
   const v = validateDraft(draft);
@@ -137,28 +149,55 @@ export async function sendBlast(
 
   // Resolve emails server-side from the ids — the client only ever
   // hands us profile ids, so a tampered request can't make us email
-  // arbitrary addresses.
+  // arbitrary addresses. That includes the parent address: it's re-read
+  // from the application here rather than trusted from the form.
   const admin = createAdminClient();
-  const recipients: { email: string; full_name: string | null }[] = [];
+  const people: {
+    email: string | null;
+    full_name: string | null;
+    parentEmail: string | null;
+  }[] = [];
   for (let i = 0; i < ids.length; i += 500) {
     const { data, error } = await admin
       .from("profiles")
-      .select("email, full_name")
+      .select(
+        "email, full_name, applications!applications_user_id_fkey(status, parent_email, created_at)",
+      )
       .in("id", ids.slice(i, i + 500));
     if (error) return { ok: false, error: error.message };
-    for (const row of data ?? []) {
-      if (row.email) recipients.push(row);
+    for (const row of (data ?? []) as any[]) {
+      people.push({
+        email: row.email ?? null,
+        full_name: row.full_name ?? null,
+        parentEmail: pickParentEmail(row.applications ?? []),
+      });
     }
   }
-  if (recipients.length === 0) {
-    return { ok: false, error: "None of the selected recipients have an email." };
+
+  const envelopes = buildEnvelopes(people, audience);
+  if (envelopes.length === 0) {
+    return {
+      ok: false,
+      error:
+        audience === "parents"
+          ? "None of the selected people have a parent email on their application."
+          : "None of the selected recipients have an email.",
+    };
+  }
+  // "Both" can double the address count, so the ceiling is re-checked against
+  // what's actually being sent rather than how many people were ticked.
+  if (envelopes.length > MAX_RECIPIENTS) {
+    return {
+      ok: false,
+      error: `That resolves to ${envelopes.length} addresses. Max ${MAX_RECIPIENTS} per blast.`,
+    };
   }
 
-  const items = recipients.map((r) => ({
-    to: r.email,
+  const items = envelopes.map((e) => ({
+    to: e.email,
     subject: v.subject,
     html: Templates.blast({
-      bodyText: personalize(v.body, firstName(r.full_name)),
+      bodyText: personalize(v.body, e.greet, joinNames(e.students)),
       preheader: v.subject,
       cta: v.cta,
     }).html,
@@ -175,7 +214,10 @@ export async function sendBlast(
     targetType: "email_blast",
     payload: {
       subject: v.subject,
+      audience,
       requested: ids.length,
+      addresses: envelopes.length,
+      parents: envelopes.filter((e) => e.kind === "parent").length,
       sent,
       failed: failed.length,
       sender: userId,

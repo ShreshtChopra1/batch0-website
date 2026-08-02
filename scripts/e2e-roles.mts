@@ -12,15 +12,27 @@
  * The accounts are deleted in a finally block, including on failure.
  */
 
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import {
+  ADMIN_ROUTE_PERMISSIONS,
+  canViewAdminPath,
+  capabilitiesFrom,
+} from "../lib/permissions.ts";
 
-if (!url || !serviceKey || !anonKey) {
-  console.error("Missing Supabase env vars.");
-  process.exit(1);
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+
+/** Throws rather than process.exit so the values narrow to `string` after. */
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`Missing ${name}. Run via npm so .env.local is loaded.`);
+    process.exit(1);
+  }
+  return value;
 }
+
+const url = required("NEXT_PUBLIC_SUPABASE_URL");
+const serviceKey = required("SUPABASE_SERVICE_ROLE_KEY");
+const anonKey = required("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
 const projectRef = new URL(url).hostname.split(".")[0];
 const COOKIE_NAME = `sb-${projectRef}-auth-token`;
@@ -33,14 +45,18 @@ const admHeaders = {
 };
 
 let failures = 0;
-const created = [];
+const created: string[] = [];
 
-function check(name, ok, detail = "") {
+function check(name: string, ok: boolean, detail = "") {
   console.log(`${ok ? "  ok  " : " FAIL "} ${name}${detail ? ` — ${detail}` : ""}`);
   if (!ok) failures++;
 }
 
-async function createUser(email, password, role) {
+async function createUser(
+  email: string,
+  password: string,
+  role: string,
+): Promise<string> {
   const res = await fetch(`${url}/auth/v1/admin/users`, {
     method: "POST",
     headers: admHeaders,
@@ -48,7 +64,7 @@ async function createUser(email, password, role) {
   });
   const body = await res.json();
   if (!res.ok) throw new Error(`createUser ${email}: ${JSON.stringify(body)}`);
-  created.push(body.id);
+  created.push(body.id as string);
   // The on_auth_user_created trigger makes the profile; set the role on it.
   const patch = await fetch(`${url}/rest/v1/profiles?id=eq.${body.id}`, {
     method: "PATCH",
@@ -60,11 +76,11 @@ async function createUser(email, password, role) {
   if (prof[0]?.role !== role) {
     throw new Error(`role did not stick for ${email}: ${JSON.stringify(prof)}`);
   }
-  return body.id;
+  return body.id as string;
 }
 
 /** Sign in for real and encode the session the way @supabase/ssr expects. */
-async function sessionCookie(email, password) {
+async function sessionCookie(email: string, password: string): Promise<string> {
   const res = await fetch(`${url}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: anonKey, "Content-Type": "application/json" },
@@ -91,7 +107,12 @@ async function sessionCookie(email, password) {
  * entry point, callable by anyone who knows the action id, so the id is
  * deliberately taken from the build manifest rather than clicked in a UI.
  */
-async function callAction(cookie, path, actionId, args) {
+async function callAction(
+  cookie: string,
+  path: string,
+  actionId: string,
+  args: unknown[],
+) {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: {
@@ -105,7 +126,7 @@ async function callAction(cookie, path, actionId, args) {
   return { status: res.status, body: await res.text() };
 }
 
-async function roleOf(userId) {
+async function roleOf(userId: string): Promise<string | null> {
   const res = await fetch(`${url}/rest/v1/profiles?select=role&id=eq.${userId}`, {
     headers: admHeaders,
   });
@@ -114,7 +135,7 @@ async function roleOf(userId) {
 }
 
 /** One request, no redirect following, so we can assert on the redirect itself. */
-async function get(cookie, path) {
+async function get(cookie: string, path: string) {
   const res = await fetch(`${BASE}${path}`, {
     headers: { cookie },
     redirect: "manual",
@@ -161,34 +182,33 @@ try {
     `${adminLogin.status} → ${adminLogin.to}`,
   );
 
-  console.log("\nintern: pages the role grants\n");
-  for (const path of [
-    "/admin",
-    "/admin/challenges",
-    "/admin/resources",
-    "/admin/events",
-    "/admin/announcements",
-    "/admin/students",
-    "/admin/applications",
-    "/admin/pulse",
-  ]) {
+  // Expectations are derived from the intern role's *live* permissions rather
+  // than hard-coded, so an admin re-permissioning the role in the UI doesn't
+  // make this suite fail. That also makes it a real check of the route table:
+  // every mapped route is visited, and each must match what the rules predict.
+  const internRole = await (
+    await fetch(`${url}/rest/v1/app_roles?select=permissions&slug=eq.intern`, {
+      headers: admHeaders,
+    })
+  ).json();
+  const internPerms: string[] = internRole?.[0]?.permissions ?? [];
+  const internCaps = capabilitiesFrom("intern", internPerms);
+  console.log(`  intern currently holds: ${internPerms.join(", ") || "(nothing)"}`);
+
+  const allowed: string[] = ["/admin"];
+  const blocked: string[] = [];
+  for (const [prefix] of ADMIN_ROUTE_PERMISSIONS) {
+    (canViewAdminPath(internCaps, prefix) ? allowed : blocked).push(prefix);
+  }
+
+  console.log(`\nintern: ${allowed.length} pages the role grants\n`);
+  for (const path of allowed) {
     const r = await get(intern, path);
     check(`GET ${path} → 200`, r.status === 200, `${r.status}${r.to ? ` → ${r.to}` : ""}`);
   }
 
-  console.log("\nintern: pages the role does NOT grant\n");
-  for (const path of [
-    "/admin/settings",
-    "/admin/roles",
-    "/admin/payments",
-    "/admin/charges",
-    "/admin/audit",
-    "/admin/blog",
-    "/admin/cohorts",
-    "/admin/teams",
-    "/admin/email/blast",
-    "/admin/discord",
-  ]) {
+  console.log(`\nintern: ${blocked.length} pages the role does NOT grant\n`);
+  for (const path of blocked) {
     const r = await get(intern, path);
     check(
       `GET ${path} → redirected to /admin`,
@@ -219,15 +239,31 @@ try {
 
   console.log("\nintern: sidebar reflects the permissions\n");
   const overview = await get(intern, "/admin");
-  check("sidebar shows Challenges", overview.body.includes("Challenges"));
-  check("sidebar shows Resources", overview.body.includes("Resources"));
-  check("sidebar hides Roles & permissions", !overview.body.includes("Roles &amp; permissions"));
-  check("sidebar hides Email blast", !overview.body.includes("Email blast"));
-  check("sidebar hides Fees &amp; fines", !overview.body.includes("Fees &amp; fines"));
-  check("sidebar hides Audit log", !overview.body.includes("Audit log"));
+  // Each label appears only when its permission is held — checked in both
+  // directions, so a sidebar that leaks a link is as loud as one that hides
+  // a link the role should have.
+  const NAV_LABELS: [string, string][] = [
+    ["Challenges", "challenges.manage"],
+    ["Resources", "resources.manage"],
+    ["Roles &amp; permissions", "roles.manage"],
+    ["Email blast", "email.send"],
+    ["Fees &amp; fines", "charges.manage"],
+    ["Audit log", "audit.view"],
+    ["Moderation", "moderation.manage"],
+    ["Discord", "discord.manage"],
+  ];
+  for (const [label, perm] of NAV_LABELS) {
+    const should = internPerms.includes(perm);
+    const shown = overview.body.includes(label);
+    check(
+      `sidebar ${should ? "shows" : "hides"} ${label}`,
+      shown === should,
+      shown === should ? "" : shown ? "unexpectedly shown" : "unexpectedly hidden",
+    );
+  }
   check(
-    "overview hides the Revenue tile (no payments.view)",
-    !overview.body.includes("Revenue"),
+    "overview Revenue tile follows payments.view",
+    overview.body.includes("Revenue") === internPerms.includes("payments.view"),
   );
   check(
     'overview hides "View as" links the role cannot use',
@@ -235,19 +271,20 @@ try {
   );
 
   console.log("\nintern: admin API routes\n");
-  const exportPeople = await get(intern, "/api/admin/export/people");
-  check(
-    "GET /api/admin/export/people → 200 (has people.view)",
-    exportPeople.status === 200,
-    String(exportPeople.status),
-  );
-  for (const [path, why] of [
+  for (const [path, perm] of [
+    ["/api/admin/export/people", "people.view"],
+    ["/api/admin/export/applications", "applications.view"],
     ["/api/admin/export/payments", "payments.view"],
     ["/api/admin/export/charges", "charges.manage"],
     ["/api/admin/resend-domain", "settings.manage"],
-  ]) {
+  ] as [string, string][]) {
+    const held = internPerms.includes(perm);
     const r = await get(intern, path);
-    check(`GET ${path} → 403 (no ${why})`, r.status === 403, String(r.status));
+    check(
+      `GET ${path} → ${held ? "200" : "403"} (${held ? "has" : "no"} ${perm})`,
+      held ? r.status === 200 : r.status === 403,
+      String(r.status),
+    );
   }
 
   console.log("\nadmin: the wildcard still reaches everything\n");
@@ -401,7 +438,7 @@ try {
       method: "DELETE",
       headers: admHeaders,
     });
-    check(`deleted test user ${id.slice(0, 8)}…`, res.ok, res.ok ? "" : String(res.status));
+    check(`deleted test user ${id.slice(0, 8)}…`, !!res.ok, res.ok ? "" : String(res.status));
   }
 }
 

@@ -12,6 +12,11 @@ import {
   type BlastDraft,
   type BlastSendResult,
 } from "./actions";
+import {
+  buildEnvelopes,
+  type BlastAudience,
+  type BlastVariant,
+} from "./shared";
 
 // Quick audience presets. "Accepted" = admitted but not yet paid — the
 // group you most often need to nudge.
@@ -24,6 +29,18 @@ const AUDIENCES = [
   { key: "everyone", label: "Everyone" },
 ] as const;
 type AudienceKey = (typeof AUDIENCES)[number]["key"];
+
+// Which addresses the chosen filter resolves to. Orthogonal to the filter
+// pills above: pick the people with those, pick their inboxes with this.
+const SEND_TO: { key: BlastAudience; label: string; hint: string }[] = [
+  { key: "students", label: "Students", hint: "Their own address." },
+  {
+    key: "parents",
+    label: "Parents",
+    hint: "The parent / guardian address from their application.",
+  },
+  { key: "both", label: "Both", hint: "Student and parent, deduplicated." },
+];
 
 // Compose starting points. Subject/body land in editable fields, so
 // these are prompts, not locked templates.
@@ -61,6 +78,16 @@ function templates(siteUrl: string) {
       ctaLabel: "Continue application",
       ctaUrl: `${siteUrl}/apply`,
     },
+    {
+      // Written with {{student}} rather than {{name}} so the same copy reads
+      // correctly whether it lands in a parent's inbox or the student's.
+      key: "parent-update",
+      label: "Parent update",
+      subject: "A quick batch0 update",
+      body: "Hi {{name}},\n\nA short update on {{student}} and what's happening at batch0 over the next few weeks.\n\n[Write your update here.]\n\nIf you have any questions, just reply to this email — it reaches us directly.\n\n— The batch0 team",
+      ctaLabel: "See the program",
+      ctaUrl: `${siteUrl}/program`,
+    },
   ];
 }
 
@@ -73,6 +100,7 @@ export function BlastForm({
 }) {
   // ---- recipient selection ----
   const [audience, setAudience] = useState<AudienceKey>("students");
+  const [sendTo, setSendTo] = useState<BlastAudience>("students");
   const [cohort, setCohort] = useState<string>("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -83,7 +111,8 @@ export function BlastForm({
     [recipients],
   );
 
-  const filtered = useMemo(() => {
+  /** Everyone matching the filter pills, before the parent-address rule. */
+  const matching = useMemo(() => {
     const q = search.trim().toLowerCase();
     return recipients.filter((r) => {
       if (audience === "students" && r.role !== "student") return false;
@@ -95,12 +124,49 @@ export function BlastForm({
       if (
         q &&
         !(r.name ?? "").toLowerCase().includes(q) &&
-        !r.email.toLowerCase().includes(q)
+        !r.email.toLowerCase().includes(q) &&
+        !(r.parentEmail ?? "").toLowerCase().includes(q)
       )
         return false;
       return true;
     });
   }, [recipients, audience, cohort, search]);
+
+  // Parents-only can't reach someone who never gave a parent address, so they
+  // drop out of the list — and get counted, because a filter that silently
+  // shrinks is how you think you emailed 40 families and actually emailed 12.
+  const filtered = useMemo(
+    () => (sendTo === "parents" ? matching.filter((r) => r.parentEmail) : matching),
+    [matching, sendTo],
+  );
+  const missingParent = useMemo(
+    () => matching.filter((r) => !r.parentEmail).length,
+    [matching],
+  );
+
+  // Unique addresses the current selection resolves to — mirrors the dedupe
+  // in buildEnvelopes() so the button never promises a number the send can't
+  // match. Siblings sharing one parent address count once.
+  const selectedPeople = useMemo(
+    () => recipients.filter((r) => selected.has(r.id)),
+    [recipients, selected],
+  );
+  const addressCount = useMemo(
+    () =>
+      buildEnvelopes(
+        selectedPeople.map((r) => ({
+          email: r.email,
+          full_name: r.name,
+          parentEmail: r.parentEmail,
+        })),
+        sendTo,
+      ).length,
+    [selectedPeople, sendTo],
+  );
+  const selectedWithoutParent = useMemo(
+    () => (sendTo === "students" ? 0 : selectedPeople.filter((r) => !r.parentEmail).length),
+    [selectedPeople, sendTo],
+  );
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -137,6 +203,13 @@ export function BlastForm({
   const draft: BlastDraft = { subject, body, ctaLabel, ctaUrl };
 
   // ---- live preview (debounced server render so preview === send) ----
+  // Which copy is on screen. Follows the Send-to choice, but stays
+  // independently switchable so you can eyeball both before sending "Both".
+  const [variant, setVariant] = useState<BlastVariant>("student");
+  useEffect(() => {
+    setVariant(sendTo === "parents" ? "parent" : "student");
+  }, [sendTo]);
+
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -146,18 +219,16 @@ export function BlastForm({
       return;
     }
     previewTimer.current = setTimeout(async () => {
-      const res = await renderBlastPreview({
-        subject,
-        body,
-        ctaLabel,
-        ctaUrl,
-      });
+      const res = await renderBlastPreview(
+        { subject, body, ctaLabel, ctaUrl },
+        variant,
+      );
       if (res.ok) setPreviewHtml(res.html);
     }, 600);
     return () => {
       if (previewTimer.current) clearTimeout(previewTimer.current);
     };
-  }, [subject, body, ctaLabel, ctaUrl]);
+  }, [subject, body, ctaLabel, ctaUrl, variant]);
 
   // ---- test + send ----
   const [testState, setTestState] = useState<{
@@ -173,14 +244,16 @@ export function BlastForm({
 
   async function onTest() {
     setTestState({ busy: true });
-    const res = await sendTestBlast(draft);
+    // Tests the copy currently on screen, so the parent variant is verifiable
+    // end-to-end and not just previewed.
+    const res = await sendTestBlast(draft, variant);
     setTestState({ busy: false, message: res.message, ok: res.ok });
   }
 
   async function onSend() {
     setSending(true);
     setResult(null);
-    const res = await sendBlast(Array.from(selected), draft);
+    const res = await sendBlast(Array.from(selected), draft, sendTo);
     setResult(res);
     setSending(false);
     setConfirming(false);
@@ -198,6 +271,44 @@ export function BlastForm({
           <span className="rounded-full border border-phosphor/40 bg-phosphor/10 px-2.5 py-0.5 text-xs font-medium tabular-nums text-phosphor-ink">
             {selected.size} selected
           </span>
+        </div>
+
+        {/* Which inbox — applies to whichever filter is active below. */}
+        <div className="mt-4">
+          <p className="mb-1.5 text-[10px] font-mono font-semibold uppercase tracking-[0.18em] text-ink-faint">
+            Send to
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {SEND_TO.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setSendTo(s.key)}
+                aria-pressed={sendTo === s.key}
+                title={s.hint}
+                className={`rounded-full border px-3 py-1 text-xs transition ${
+                  sendTo === s.key
+                    ? "border-phosphor bg-phosphor/10 text-phosphor-ink"
+                    : "border-line text-ink-soft hover:border-ink/30 hover:text-ink"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-ink-faint">
+            {SEND_TO.find((s) => s.key === sendTo)?.hint}
+            {sendTo !== "students" && (
+              <>
+                {" "}
+                Use{" "}
+                <code className="rounded bg-wash px-1 font-mono">
+                  {"{{student}}"}
+                </code>{" "}
+                in the body to name the student.
+              </>
+            )}
+          </p>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -260,10 +371,21 @@ export function BlastForm({
           )}
         </div>
 
+        {sendTo === "parents" && missingParent > 0 && (
+          <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
+            {missingParent} {missingParent === 1 ? "person" : "people"} in this
+            filter {missingParent === 1 ? "has" : "have"} no parent email on
+            their application and {missingParent === 1 ? "is" : "are"} hidden.
+            The question is optional, so this is normal.
+          </p>
+        )}
+
         <ul className="mt-3 max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line">
           {filtered.length === 0 && (
             <li className="p-4 text-sm text-ink-faint">
-              No one matches this filter.
+              {sendTo === "parents"
+                ? "Nobody matching this filter has a parent email on file."
+                : "No one matches this filter."}
             </li>
           )}
           {filtered.map((r) => (
@@ -279,11 +401,28 @@ export function BlastForm({
                   <span className="block truncate text-sm text-ink">
                     {r.name || r.email}
                   </span>
+                  {/* Show the address that will actually be used, so the row
+                      never implies mail is going somewhere it isn't. */}
                   <span className="block truncate text-xs text-ink-faint">
-                    {r.email}
+                    {sendTo === "parents" ? (
+                      <span className="text-ink-soft">{r.parentEmail}</span>
+                    ) : (
+                      r.email
+                    )}
                     {r.appStatus ? ` · ${r.appStatus}` : ""}
                     {r.cohorts.length > 0 ? ` · ${r.cohorts.join(", ")}` : ""}
                   </span>
+                  {sendTo === "both" && (
+                    <span className="block truncate text-xs text-ink-faint">
+                      {r.parentEmail ? (
+                        <>+ parent {r.parentEmail}</>
+                      ) : (
+                        <span className="text-amber-700 dark:text-amber-300">
+                          no parent email on file
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </span>
                 {r.role !== "student" && (
                   <span className="rounded border border-line px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-ink-faint">
@@ -342,7 +481,12 @@ export function BlastForm({
                 <code className="rounded bg-wash px-1 font-mono">
                   {"{{name}}"}
                 </code>{" "}
-                becomes each recipient&apos;s first name.
+                greets the reader — the student&apos;s first name, or
+                &ldquo;there&rdquo; for a parent.{" "}
+                <code className="rounded bg-wash px-1 font-mono">
+                  {"{{student}}"}
+                </code>{" "}
+                is always the student, so one message reads correctly to both.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -369,21 +513,66 @@ export function BlastForm({
         </Card>
 
         <Card>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-soft">
               Preview
             </h2>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={onTest}
-              disabled={!composeValid || testState.busy}
-            >
-              <FlaskConical className="h-3.5 w-3.5" />
-              {testState.busy ? "Sending…" : "Send test to me"}
-            </Button>
+            <div className="flex items-center gap-2">
+              {sendTo === "both" && (
+                <div className="flex rounded-md border border-line p-0.5">
+                  {(["student", "parent"] as BlastVariant[]).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setVariant(v)}
+                      aria-pressed={variant === v}
+                      className={`rounded px-2 py-0.5 text-xs capitalize transition ${
+                        variant === v
+                          ? "bg-phosphor/15 text-phosphor-ink"
+                          : "text-ink-faint hover:text-ink"
+                      }`}
+                    >
+                      {v} copy
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={onTest}
+                disabled={!composeValid || testState.busy}
+              >
+                <FlaskConical className="h-3.5 w-3.5" />
+                {testState.busy ? "Sending…" : "Send test to me"}
+              </Button>
+            </div>
           </div>
+          {sendTo !== "students" && (
+            <p className="mt-2 text-xs text-ink-faint">
+              Showing the{" "}
+              <span className="text-ink-soft">
+                {variant === "parent" ? "parent" : "student"}
+              </span>{" "}
+              copy.{" "}
+              {variant === "parent" ? (
+                <>
+                  <code className="rounded bg-wash px-1 font-mono">
+                    {"{{name}}"}
+                  </code>{" "}
+                  becomes “there” — we never collect a parent&apos;s name.
+                </>
+              ) : (
+                <>
+                  <code className="rounded bg-wash px-1 font-mono">
+                    {"{{name}}"}
+                  </code>{" "}
+                  becomes the student&apos;s first name.
+                </>
+              )}
+            </p>
+          )}
           {testState.message && (
             <p
               className={`mt-2 text-xs ${
@@ -435,15 +624,25 @@ export function BlastForm({
             </div>
           )}
 
+          {selectedWithoutParent > 0 && (
+            <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
+              {selectedWithoutParent} of the {selected.size} selected{" "}
+              {selectedWithoutParent === 1 ? "has" : "have"} no parent email
+              {sendTo === "parents"
+                ? " and will be skipped."
+                : " — those get the student copy only."}
+            </p>
+          )}
+
           {!confirming ? (
             <Button
               type="button"
               className="w-full"
-              disabled={!composeValid || selected.size === 0 || sending}
+              disabled={!composeValid || addressCount === 0 || sending}
               onClick={() => setConfirming(true)}
             >
               <Send className="h-4 w-4" />
-              Send to {selected.size} recipient{selected.size === 1 ? "" : "s"}
+              Send to {addressCount} address{addressCount === 1 ? "" : "es"}
             </Button>
           ) : (
             <div className="flex items-center gap-3">
@@ -455,7 +654,19 @@ export function BlastForm({
               >
                 {sending
                   ? "Sending…"
-                  : `Yes — email ${selected.size} ${selected.size === 1 ? "person" : "people"} now`}
+                  : `Yes — email ${addressCount} ${
+                      sendTo === "students"
+                        ? addressCount === 1
+                          ? "student"
+                          : "students"
+                        : sendTo === "parents"
+                          ? addressCount === 1
+                            ? "parent"
+                            : "parents"
+                          : addressCount === 1
+                            ? "address"
+                            : "addresses"
+                    } now`}
               </Button>
               <Button
                 type="button"
@@ -468,8 +679,11 @@ export function BlastForm({
             </div>
           )}
           <p className="mt-2 text-center text-xs text-ink-faint">
-            Emails send from your Resend account with the batch0 template.
-            There&apos;s no undo — send a test first.
+            {selected.size} selected → {addressCount} unique address
+            {addressCount === 1 ? "" : "es"}
+            {sendTo !== "students" &&
+              " (a parent with two students here gets one email)"}
+            . There&apos;s no undo — send a test first.
           </p>
         </Card>
       </div>
