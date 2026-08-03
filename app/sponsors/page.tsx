@@ -4,12 +4,33 @@ import { TIERS } from "./tiers";
 import { SponsorContactForm } from "./sponsor-contact-form";
 import { getSiteConfig } from "@/lib/site-config";
 import { getProfile, roleHome } from "@/lib/auth";
+import {
+  SITE,
+  ORG_ID,
+  JsonLd,
+  breadcrumbJsonLd,
+  webPageJsonLd,
+} from "@/lib/schema";
 
 export const metadata = {
   title: "Fund Grants for High-School Founders — batch0",
   description:
     "Fund non-dilutive grants for high-school founders in batch0's founding cohort. Three tiers, every dollar disclosed.",
   alternates: { canonical: "/sponsors" },
+  openGraph: {
+    title: "Fund Grants for High-School Founders — batch0",
+    description:
+      "Sponsor non-dilutive grants for high-school founders in batch0's founding cohort. Three tiers, every dollar disclosed.",
+    url: `${SITE}/sponsors`,
+    siteName: "batch0",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image" as const,
+    title: "Fund Grants for High-School Founders — batch0",
+    description:
+      "Sponsor non-dilutive grants for high-school founders in batch0's founding cohort. Three tiers, every dollar disclosed.",
+  },
 };
 
 // Capacity is interpolated from the cohort record so this page can never
@@ -151,6 +172,44 @@ export default async function SponsorsPage() {
       </section>
 
       <Footer config={config} />
+
+      <JsonLd
+        data={webPageJsonLd({
+          path: "/sponsors",
+          name: "Fund Grants for High-School Founders — batch0",
+          description:
+            "Sponsor non-dilutive grants for high-school founders in batch0's founding cohort. Three tiers, every dollar disclosed.",
+        })}
+      />
+      {/* The three tiers as a priced catalog, built from the same TIERS
+          array the page renders — prices and perks can't drift from what a
+          sponsor actually sees. These are sponsorships, not tuition, so
+          they hang off the org rather than the Course. */}
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "OfferCatalog",
+          "@id": `${SITE}/sponsors#tiers`,
+          name: "batch0 sponsorship tiers",
+          url: `${SITE}/sponsors#tiers`,
+          provider: { "@id": ORG_ID },
+          // Order is carried by the array itself — `position` is a ListItem
+          // property, not an Offer one, so adding it here would be invalid.
+          itemListElement: TIERS.map((t) => ({
+            "@type": "Offer",
+            name: t.name,
+            description: `${t.tagline} ${t.perks.join(". ")}.`,
+            price: t.price.replace(/[^0-9.]/g, ""),
+            priceCurrency: "USD",
+            category: "Sponsorship",
+            url: `${SITE}/sponsors#contact`,
+            availability: "https://schema.org/InStock",
+          })),
+        }}
+      />
+      <JsonLd
+        data={breadcrumbJsonLd([{ name: "Sponsors", path: "/sponsors" }])}
+      />
     </main>
   );
 }

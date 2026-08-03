@@ -12,8 +12,7 @@ import {
   getRelatedPosts,
   formatPostDate,
 } from "@/lib/blog";
-
-const SITE = "https://batch0.org";
+import { SITE, ORG_ID } from "@/lib/schema";
 
 // Every post is a file on disk, so the whole set can be pre-rendered at
 // build time — static HTML is the fastest thing to serve and the cleanest
@@ -93,12 +92,9 @@ export default async function BlogPostPage({
       name: meta.author.name,
       url: meta.author.url,
     },
-    publisher: {
-      "@type": "Organization",
-      name: "batch0",
-      url: SITE,
-      logo: { "@type": "ImageObject", url: `${SITE}/icon-512.png` },
-    },
+    // Reference, not a redeclaration — the full org node ships in the root
+    // layout and matching `@id`s merge them into one entity.
+    publisher: { "@id": ORG_ID },
     isPartOf: {
       "@type": "Blog",
       "@id": `${SITE}/blog`,

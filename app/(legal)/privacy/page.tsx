@@ -1,3 +1,5 @@
+import { JsonLd, breadcrumbJsonLd, webPageJsonLd } from "@/lib/schema";
+
 export const metadata = {
   title: "Privacy Policy · batch0",
   description: "How batch0 collects, uses, and protects student and parent data.",
@@ -99,6 +101,17 @@ export default function PrivacyPage() {
           hello@batch0.org
         </a>
       </p>
+
+      <JsonLd
+        data={webPageJsonLd({
+          path: "/privacy",
+          name: "Privacy Policy",
+          description:
+            "How batch0 collects, uses, and protects student and parent data.",
+          dateModified: "2026-05-12",
+        })}
+      />
+      <JsonLd data={breadcrumbJsonLd([{ name: "Privacy", path: "/privacy" }])} />
     </>
   );
 }
