@@ -4,8 +4,7 @@ import Footer from "@/components/footer";
 import { getSiteConfig } from "@/lib/site-config";
 import { getProfile, roleHome } from "@/lib/auth";
 import { getAllPostsMeta, formatPostDate, type PostMeta } from "@/lib/blog";
-
-const SITE = "https://batch0.org";
+import { SITE, ORG_ID } from "@/lib/schema";
 
 export const metadata = {
   title: "Startup Guides for High Schoolers — batch0 Blog",
@@ -73,12 +72,10 @@ export default async function BlogIndexPage() {
     description:
       "Guides and essays on building a startup as a high schooler — from idea validation to demo day.",
     url: `${SITE}/blog`,
-    publisher: {
-      "@type": "Organization",
-      name: "batch0",
-      url: SITE,
-      logo: `${SITE}/icon-512.png`,
-    },
+    // Reference, not a redeclaration: the full org node ships in the root
+    // layout, and matching `@id`s are what let crawlers merge the two into
+    // one entity instead of two thin ones.
+    publisher: { "@id": ORG_ID },
     blogPost: posts.map((p) => ({
       "@type": "BlogPosting",
       headline: p.title,

@@ -3,6 +3,14 @@ import { VT323, IBM_Plex_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { ThemeProvider } from "@/components/theme-provider";
+import {
+  SITE,
+  ORG_ID,
+  WEBSITE_ID,
+  FOUNDERS,
+  STUDENT_AUDIENCE,
+  JsonLd,
+} from "@/lib/schema";
 import "./globals.css";
 
 // Type system (DESIGN.md): one idea — a terminal. VT323 is the DEC VT320
@@ -35,17 +43,16 @@ export const viewport: Viewport = {
   ],
 };
 
-// The site serves from the apex; batchzero.org and the legacy
-// sparklineyouth.org both redirect here, so canonicals must match this.
-const SITE = "https://batch0.org";
-
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
   // Search phrase first, brand last: "batch0" carries no search intent yet,
   // so the page has to be findable by what it *is*, not what it's called.
   title: "Startup Accelerator for High Schoolers — batch0",
+  // Dates here are static (metadata can't await the cohort record), so they
+  // mirror FALLBACK_COHORT in lib/site-config.ts — re-check both together
+  // whenever the cohort row moves.
   description:
-    "batch0 is a live, online startup accelerator for U.S. high schoolers. Cohort 1 runs Jul 30–Sep 13, 2026. $130 tuition, free to apply. No equity taken.",
+    "batch0 is a live, online startup accelerator for U.S. high schoolers. Cohort 1 runs Aug 17–Oct 18, 2026. $130 tuition, free to apply. No equity taken.",
   keywords: [
     "high school startup accelerator",
     "startup programs for high schoolers",
@@ -60,7 +67,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Startup Accelerator for High Schoolers — batch0",
     description:
-      "A live, online startup accelerator for U.S. high schoolers. Build a real company in four sprint weeks, then pitch it at demo day. $130, free to apply, no equity taken.",
+      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $130, free to apply, no equity taken.",
     url: SITE,
     siteName: "batch0",
     // Image is generated dynamically by app/opengraph-image.tsx and picked
@@ -71,7 +78,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Startup Accelerator for High Schoolers — batch0",
     description:
-      "A live, online startup accelerator for U.S. high schoolers. Build a real company in four sprint weeks, then pitch it at demo day. $130, free to apply, no equity taken.",
+      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $130, free to apply, no equity taken.",
   },
   icons: {
     icon: [
@@ -85,40 +92,89 @@ export const metadata: Metadata = {
   },
 };
 
-// Structured data for search engines. Lives on every page (it's harmless
-// duplication for crawlers and lets engines surface the org on any URL).
-// Every value here is verifiable: cohort dates/price from the cohorts
-// table, entity + contact from the footer, audience from the terms.
+// ---------- Structured data for search engines ----------
+// The org + site nodes live on every page (harmless duplication for
+// crawlers, and it lets engines surface the org from any URL). Every value
+// is verifiable: entity + contact from the footer, audience from the terms,
+// people from the "Who runs this" section. Richer per-page types (Course,
+// FAQPage, BlogPosting, sponsor offers) reference these two by `@id` — see
+// lib/schema.tsx for why the ids matter.
+//
+// The tuition Offer here is the static base price, matching FALLBACK_COHORT
+// in lib/site-config.ts. It is intentionally not read from the DB: this is
+// the root layout, so a query here would hit every authenticated page too.
+// Pages that need the live, regional price (/program) emit it themselves.
 const orgJsonLd = {
   "@context": "https://schema.org",
   "@type": "EducationalOrganization",
+  "@id": ORG_ID,
   name: "batch0",
   // The former name, kept deliberately: it's how search engines and anyone
   // holding an old link connect the two entities across the rename.
   alternateName: "Sparkline Youth",
   url: SITE,
-  logo: `${SITE}/icon-512.png`,
+  logo: {
+    "@type": "ImageObject",
+    url: `${SITE}/icon-512.png`,
+    width: 512,
+    height: 512,
+  },
   description:
-    "batch0 is a live, online startup accelerator for U.S. high schoolers. Students build a real company across four sprint weeks and pitch it at a live demo day. No equity is taken; sponsorship for standouts is merit-based and funding is never guaranteed.",
+    "batch0 is a live, online startup accelerator for U.S. high schoolers. Students build a real company across four one-week build sprints and pitch it at a live demo day. No equity is taken; sponsorship for standouts is merit-based and funding is never guaranteed.",
   legalName: "Sparkline Youth LLC",
+  founder: FOUNDERS,
+  foundingDate: "2026",
+  email: "hello@batch0.org",
   contactPoint: {
     "@type": "ContactPoint",
     contactType: "customer support",
     email: "hello@batch0.org",
+    availableLanguage: "English",
   },
-  audience: {
-    "@type": "EducationalAudience",
-    educationalRole: "student",
-    audienceType: "U.S. high school students, ages 13–18",
-  },
+  audience: STUDENT_AUDIENCE,
+  // What the program actually teaches. Topical signals for an entity with
+  // no brand search volume yet; each one is a section of the /program
+  // syllabus, not an aspiration.
+  knowsAbout: [
+    "Startup accelerators",
+    "Youth entrepreneurship",
+    "Startup idea validation",
+    "Customer interviews",
+    "MVP development",
+    "Go-to-market strategy",
+    "Pitch decks",
+  ],
   offers: {
     "@type": "Offer",
     price: "129.99",
     priceCurrency: "USD",
     category: "Tuition",
+    availability: "https://schema.org/LimitedAvailability",
     description:
       "Cohort tuition, charged only if accepted. Free to apply. Reduced regional pricing available in select countries.",
   },
+  // TODO(RISH): `sameAs` — the official Instagram/Discord/X handles, once
+  // they exist (NEEDED_FACTS.md #11; the footer carries the same TODO).
+  // Left off deliberately rather than guessed: `sameAs` asserts that an
+  // account *is* this organization, so a wrong handle hands the brand
+  // entity to someone else's profile. Add to this one place when known.
+};
+
+// WebSite node — establishes the site itself as an entity and gives every
+// page a single `isPartOf` target. No `potentialAction`/SearchAction: the
+// site has no search endpoint, and declaring one that doesn't work is a
+// structured-data error rather than a free sitelinks box.
+const websiteJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "@id": WEBSITE_ID,
+  name: "batch0",
+  alternateName: "Sparkline Youth",
+  url: SITE,
+  description:
+    "A live, online startup accelerator for high schoolers. Build a real company, pitch it at demo day.",
+  publisher: { "@id": ORG_ID },
+  inLanguage: "en-US",
 };
 
 export default function RootLayout({
@@ -147,12 +203,8 @@ export default function RootLayout({
             Skip to content
           </a>
           <div id="main-content">{children}</div>
-          <script
-            type="application/ld+json"
-            // JSON.stringify is safe here — the payload is a fixed literal,
-            // no user input is interpolated.
-            dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
-          />
+          <JsonLd data={orgJsonLd} />
+          <JsonLd data={websiteJsonLd} />
           <Analytics />
           {/* Real-user Core Web Vitals. Like <Analytics />, the script 404s on
               localhost by design and resolves on Vercel; data only appears once

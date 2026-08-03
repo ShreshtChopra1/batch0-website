@@ -112,7 +112,7 @@ const FALLBACK_SETTINGS: SiteSettings = {
 // Aug 17 → Oct 18, so an outage would have shown dates 5 weeks out of date.
 // Re-check these against /admin/cohorts whenever the cohort row changes.
 // Last verified against the DB: 2026-07-16.
-const FALLBACK_COHORT: ActiveCohort = {
+export const FALLBACK_COHORT: ActiveCohort = {
   id: "",
   name: "Fall 2026",
   cohortNumber: 1,

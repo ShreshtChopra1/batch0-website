@@ -4,15 +4,37 @@ import Footer from "@/components/footer";
 import { Ledger } from "@/components/ledger";
 import { ApplyCta } from "@/components/apply-cta";
 import { WEEKS } from "@/components/curriculum";
-import { getSiteConfig } from "@/lib/site-config";
+import { getSiteConfig, FALLBACK_COHORT } from "@/lib/site-config";
 import { getCountryFromHeaders } from "@/lib/pricing";
 import { getProfile, roleHome } from "@/lib/auth";
+import {
+  SITE,
+  ORG_ID,
+  FOUNDERS,
+  STUDENT_AUDIENCE,
+  JsonLd,
+  breadcrumbJsonLd,
+} from "@/lib/schema";
 
 export const metadata = {
   title: "Program: Four Sprints to Demo Day — batch0",
   description:
     "What actually happens inside batch0, week by week: kickoff, four build sprints each followed by a build week, live sessions on Zoom, and a live demo day at the end.",
   alternates: { canonical: "/program" },
+  openGraph: {
+    title: "Program: Four Sprints to Demo Day — batch0",
+    description:
+      "What actually happens inside batch0, week by week: kickoff, four build sprints, live sessions on Zoom, and a live demo day at the end.",
+    url: `${SITE}/program`,
+    siteName: "batch0",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image" as const,
+    title: "Program: Four Sprints to Demo Day — batch0",
+    description:
+      "What actually happens inside batch0, week by week: kickoff, four build sprints, live sessions on Zoom, and a live demo day at the end.",
+  },
 };
 
 // Sprint-by-sprint detail — the founder-authored syllabus expanded with
@@ -49,6 +71,114 @@ export default async function ProgramPage() {
   const authedHome = profile ? roleHome(profile.role) : null;
   const { derived } = config;
   const cohortLabel = derived.cohortLabel || "the next cohort";
+
+  // ---------- Course structured data ----------
+  // The richest entity on the site, and the one Google can render as a
+  // course result. Everything dynamic reads from the same cohort record the
+  // Ledger above renders, so the markup can't disagree with the visible
+  // page; the syllabus is built from the same WEEKS array as "Step by Step".
+  // Same fallback `derived` uses: on a Supabase outage `config.cohort` is
+  // null while the Ledger and FAQ still render FALLBACK_COHORT's dates, so
+  // reading the raw field here would quietly strip dates and price out of
+  // the markup on exactly the pages still showing them.
+  const cohort = config.cohort ?? FALLBACK_COHORT;
+
+  // Cohort length in whole weeks, derived rather than stated: the copy says
+  // "nine weeks" today, but the cohort row has moved before (see
+  // FALLBACK_COHORT) and hardcoding it here is how markup goes stale.
+  const cohortWeeks =
+    cohort.startsOn && cohort.endsOn
+      ? Math.round(
+          (Date.parse(`${cohort.endsOn}T00:00:00Z`) -
+            Date.parse(`${cohort.startsOn}T00:00:00Z`)) /
+            (7 * 24 * 60 * 60 * 1000),
+        )
+      : null;
+
+  const courseInstance = {
+    "@type": "CourseInstance",
+    "@id": `${SITE}/program#cohort-${cohort.cohortNumber ?? 1}`,
+    name: derived.cohortHeadline || cohortLabel,
+    // Live sessions run on Zoom, so the instance is fully virtual and the
+    // location is the platform itself.
+    courseMode: "Online",
+    location: {
+      "@type": "VirtualLocation",
+      name: "Zoom",
+    },
+    instructor: FOUNDERS,
+    inLanguage: "en-US",
+    ...(cohort.startsOn ? { startDate: cohort.startsOn } : {}),
+    ...(cohort.endsOn ? { endDate: cohort.endsOn } : {}),
+    // One live cohort session per week plus office hours. Google needs
+    // either a schedule or a workload; the schedule is the one we can state
+    // exactly, since the published commitment is a 5–10 hour range and no
+    // single ISO duration says that honestly.
+    ...(cohort.startsOn && cohort.endsOn && cohortWeeks
+      ? {
+          courseSchedule: {
+            "@type": "Schedule",
+            repeatFrequency: "Weekly",
+            repeatCount: cohortWeeks,
+            startDate: cohort.startsOn,
+            endDate: cohort.endsOn,
+            scheduleTimezone: "America/New_York",
+          },
+        }
+      : {}),
+    offers: {
+      "@type": "Offer",
+      // Base tuition, not the visitor's regional price: the markup is
+      // cached and shared across regions, so it has to state the canonical
+      // number. `derived.priceLabel` still drives what the page shows.
+      price: (cohort.priceCents / 100).toFixed(2),
+      priceCurrency: "USD",
+      category: "Tuition",
+      url: `${SITE}/apply`,
+      availability:
+        derived.spotsLeft > 0
+          ? "https://schema.org/LimitedAvailability"
+          : "https://schema.org/SoldOut",
+      ...(cohort.applicationsCloseAt
+        ? { validThrough: cohort.applicationsCloseAt }
+        : {}),
+      description:
+        "Charged only if accepted; applying is free. Reduced regional pricing applies automatically in select countries.",
+    },
+  };
+
+  const courseJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Course",
+    "@id": `${SITE}/program#course`,
+    name: "batch0 — Startup Accelerator for High Schoolers",
+    description:
+      "A live, online startup accelerator where high schoolers build a real company across four one-week build sprints — Validate, Build, Market, Pitch — each followed by a build week, and pitch it at a live demo day.",
+    url: `${SITE}/program`,
+    provider: { "@id": ORG_ID },
+    audience: STUDENT_AUDIENCE,
+    educationalLevel: "High School",
+    inLanguage: "en-US",
+    isAccessibleForFree: false,
+    teaches: WEEKS.map((w) => w.deliverable),
+    about: [
+      "Startup idea validation",
+      "Customer interviews",
+      "MVP development",
+      "Business model design",
+      "Go-to-market strategy",
+      "Pitch decks",
+    ],
+    syllabusSections: WEEKS.map((w, i) => ({
+      "@type": "Syllabus",
+      position: i + 1,
+      name: w.title,
+      description: w.body,
+      // Each sprint is one taught week plus one build week.
+      timeRequired: "P2W",
+    })),
+    hasCourseInstance: courseInstance,
+  };
 
   return (
     <main className="min-h-screen bg-paper">
@@ -163,6 +293,9 @@ export default async function ProgramPage() {
       </section>
 
       <Footer config={config} />
+
+      <JsonLd data={courseJsonLd} />
+      <JsonLd data={breadcrumbJsonLd([{ name: "Program", path: "/program" }])} />
     </main>
   );
 }
