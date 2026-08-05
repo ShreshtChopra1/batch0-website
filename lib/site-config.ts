@@ -1,5 +1,13 @@
+import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRegionalPrice } from "@/lib/pricing";
+import {
+  buildMetaDescription,
+  formatApplyBy,
+  formatDateSentence,
+} from "@/lib/seo-meta";
+
+export { META_DESCRIPTION_MAX } from "@/lib/seo-meta";
 
 // Single source of truth for public, admin-editable site facts (active
 // cohort + branding). The admin can change anything here from
@@ -51,6 +59,15 @@ export type SiteConfig = {
     cohortHeadline: string;
     /** "Jun 15 → Jul 13" — date range, or "" if dates are missing. */
     dateRangeLabel: string;
+    /**
+     * "Sep 14 – Nov 13, 2026" — the same range with the year, en-dashed for
+     * prose. Exists separately from `dateRangeLabel` because that one uses a
+     * "→" glyph that reads as mojibake in a search result snippet.
+     * "" when dates are missing.
+     */
+    dateRangeSentence: string;
+    /** "Sep 10" — application deadline, short form. "" if none is set. */
+    applyByLabel: string;
     /** "97" — integer-rounded dollar price (no $ prefix), regional. */
     priceDollars: string;
     /** "$97" — convenience formatted price for the visitor's region. */
@@ -107,21 +124,33 @@ const FALLBACK_SETTINGS: SiteSettings = {
 // Mirrors the real Cohort 1 row so a Supabase outage can't make the marketing
 // site display stale facts.
 //
-// This only helps if it actually matches the row — it had drifted to the
-// cohort's original Jul 30 → Sep 13 dates while the real row moved to
-// Aug 17 → Oct 18, so an outage would have shown dates 5 weeks out of date.
-// Re-check these against /admin/cohorts whenever the cohort row changes.
-// Last verified against the DB: 2026-07-16.
+// This constant has now drifted TWICE. It sat on the cohort's original
+// Jul 30 → Sep 13 dates after the row moved to Aug 17 → Oct 18, and it sat on
+// Aug 17 → Oct 18 after the row moved to Sep 14 → Nov 13. Both times the
+// stale value was also copied into a hardcoded `description` string in
+// app/layout.tsx, which is baked at build time — so production served
+// "Cohort 1 runs Jul 30–Sep 13" to Google while the page body said Sep 14.
+// A search snippet telling applicants the cohort already ended is the most
+// expensive bug on this site.
+//
+// The structural fix is in place now: no page hardcodes dates into metadata
+// any more. `generateMetadata` on / and /program reads this same record at
+// request time (see `metaDescription` below), so the snippet always tracks
+// the DB. This constant is now only the outage fallback it was meant to be.
+//
+// It can still drift, so `npm run seo-doctor` diffs it against the live row
+// and exits non-zero on mismatch. Run it whenever the cohort row changes.
+// Last verified: 2026-08-05.
 export const FALLBACK_COHORT: ActiveCohort = {
   id: "",
   name: "Fall 2026",
   cohortNumber: 1,
-  startsOn: "2026-08-17",
-  endsOn: "2026-10-18",
+  startsOn: "2026-09-14",
+  endsOn: "2026-11-13",
   capacity: 50,
   priceCents: 12999,
   status: "upcoming",
-  applicationsCloseAt: "2026-08-10T23:59:00+00:00",
+  applicationsCloseAt: "2026-09-10T23:59:00+00:00",
 };
 
 function formatDateRange(startsOn: string | null, endsOn: string | null) {
@@ -138,6 +167,28 @@ function formatDateRange(startsOn: string | null, endsOn: string | null) {
     });
   };
   return `${fmt(startsOn)} → ${fmt(endsOn)}`;
+}
+
+/**
+ * The `<meta name="description">` for the marketing surface, built from the
+ * live cohort record rather than a build-time constant.
+ *
+ * Thin adapter only — the copy rules and the length budget live in
+ * lib/seo-meta.ts, which is import-free and unit-tested. `now` is threaded
+ * through so tests can pin the deadline logic.
+ */
+export function metaDescription(config: SiteConfig, now = new Date()): string {
+  // Read raw dates from the same record `derive` used, so the snippet can
+  // never disagree with the dates rendered on the page.
+  const c = config.cohort ?? FALLBACK_COHORT;
+  return buildMetaDescription({
+    cohortLabel: config.derived.cohortLabel,
+    startsOn: c.startsOn,
+    endsOn: c.endsOn,
+    applicationsCloseAt: c.applicationsCloseAt,
+    basePriceLabel: config.derived.basePriceLabel,
+    now,
+  });
 }
 
 function derive(
@@ -200,6 +251,8 @@ function derive(
     cohortName,
     cohortHeadline,
     dateRangeLabel: formatDateRange(c.startsOn, c.endsOn),
+    dateRangeSentence: formatDateSentence(c.startsOn, c.endsOn),
+    applyByLabel: formatApplyBy(c.applicationsCloseAt),
     priceDollars: String(dollars),
     priceLabel: `$${dollars}`,
     priceCents: regional.amountCents,
@@ -227,7 +280,25 @@ function derive(
 export async function getSiteConfig(
   opts: { countryCode?: string | null } = {},
 ): Promise<SiteConfig> {
-  const countryCode = opts.countryCode ?? null;
+  // Unwrap to a primitive before hitting the cache. React's `cache()` keys on
+  // argument identity, and `{ countryCode }` allocates a fresh object at every
+  // call site — passing the options bag straight through would miss on every
+  // single call and quietly make the memoisation a no-op.
+  return getSiteConfigCached(opts.countryCode ?? null);
+}
+
+/**
+ * Request-scoped memoisation of the real work.
+ *
+ * This is what makes `generateMetadata` free. Next.js runs `generateMetadata`
+ * and the page component in the same request, so `/` now resolves the cohort
+ * once and both the meta description and the rendered page read that one
+ * result — no second Supabase round-trip, and no chance of the snippet and
+ * the page body disagreeing because they queried at different moments.
+ */
+const getSiteConfigCached = cache(async function getSiteConfigUncached(
+  countryCode: string | null,
+): Promise<SiteConfig> {
   const admin = createAdminClient();
 
   const [settingsRes, pinnedIdRes] = await Promise.all([
@@ -347,4 +418,4 @@ export async function getSiteConfig(
       countryCode,
     ),
   };
-}
+});

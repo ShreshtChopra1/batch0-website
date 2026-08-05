@@ -48,11 +48,19 @@ export const metadata: Metadata = {
   // Search phrase first, brand last: "batch0" carries no search intent yet,
   // so the page has to be findable by what it *is*, not what it's called.
   title: "Startup Accelerator for High Schoolers — batch0",
-  // Dates here are static (metadata can't await the cohort record), so they
-  // mirror FALLBACK_COHORT in lib/site-config.ts — re-check both together
-  // whenever the cohort row moves.
+  // Deliberately date-free. The earlier version of this string hardcoded the
+  // cohort dates "mirroring" FALLBACK_COHORT, and drifted twice — production
+  // spent weeks telling Google "Cohort 1 runs Jul 30–Sep 13" while the page
+  // body said Sep 14. A build-time constant cannot track a database row, so
+  // it no longer tries.
+  //
+  // The pages that should advertise dates now compute them per request:
+  // `generateMetadata` in app/page.tsx and app/program/page.tsx call
+  // `metaDescription()` from lib/site-config. This value is the inherited
+  // default for every other route, where it is always true regardless of
+  // where the cohort calendar sits.
   description:
-    "batch0 is a live, online startup accelerator for U.S. high schoolers. Cohort 1 runs Aug 17–Oct 18, 2026. $130 tuition, free to apply. No equity taken.",
+    "batch0 is a live, online startup accelerator for high schoolers. Build a real company across four build sprints and pitch it at demo day. Free to apply, no equity taken.",
   keywords: [
     "high school startup accelerator",
     "startup programs for high schoolers",

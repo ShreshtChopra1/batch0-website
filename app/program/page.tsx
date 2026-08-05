@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Navbar from "@/components/navbar";
 import Footer from "@/components/footer";
@@ -16,26 +17,40 @@ import {
   breadcrumbJsonLd,
 } from "@/lib/schema";
 
-export const metadata = {
-  title: "Program: Four Sprints to Demo Day — batch0",
-  description:
-    "What actually happens inside batch0, week by week: kickoff, four build sprints each followed by a build week, live sessions on Zoom, and a live demo day at the end.",
-  alternates: { canonical: "/program" },
-  openGraph: {
-    title: "Program: Four Sprints to Demo Day — batch0",
-    description:
-      "What actually happens inside batch0, week by week: kickoff, four build sprints, live sessions on Zoom, and a live demo day at the end.",
-    url: `${SITE}/program`,
-    siteName: "batch0",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image" as const,
-    title: "Program: Four Sprints to Demo Day — batch0",
-    description:
-      "What actually happens inside batch0, week by week: kickoff, four build sprints, live sessions on Zoom, and a live demo day at the end.",
-  },
-};
+const PROGRAM_TITLE = "Program: Four Sprints to Demo Day — batch0";
+
+// Generated per request for the same reason as the homepage: this page's whole
+// job is answering "when does it run and what happens", and the answer lives
+// in a database row that moves without a deploy.
+//
+// The old static string was also 163 characters, so Google was truncating it
+// mid-clause before it ever reached "demo day". Leading with the dates keeps
+// the useful half inside the ~155-character budget.
+export async function generateMetadata(): Promise<Metadata> {
+  const { derived } = await getSiteConfig({ countryCode: null });
+  const when = derived.dateRangeSentence
+    ? ` ${derived.cohortLabel || "Next cohort"}: ${derived.dateRangeSentence}.`
+    : "";
+  const description = `Inside batch0 week by week: kickoff, four build sprints, live sessions on Zoom, and a live demo day.${when}`;
+
+  return {
+    title: PROGRAM_TITLE,
+    description,
+    alternates: { canonical: "/program" },
+    openGraph: {
+      title: PROGRAM_TITLE,
+      description,
+      url: `${SITE}/program`,
+      siteName: "batch0",
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image" as const,
+      title: PROGRAM_TITLE,
+      description,
+    },
+  };
+}
 
 // Sprint-by-sprint detail — the founder-authored syllabus expanded with
 // the session mechanics each week actually involves.
