@@ -314,3 +314,26 @@ export async function getPostsByCategory(
 ): Promise<PostMeta[]> {
   return (await getAllPostsMeta()).filter((p) => p.category === category);
 }
+
+/**
+ * Posts to surface on the homepage.
+ *
+ * The homepage is the strongest page on the site — the most external links
+ * point at it, so it holds the most authority to pass on. Until now it linked
+ * to zero blog posts, so none of that reached the 135 guides, and the only
+ * route a crawler had into a given post was the flat index.
+ *
+ * That matters more than it sounds: an exact-phrase search for a post title
+ * that exists nowhere else on the internet currently returns nothing, which
+ * means Google hasn't indexed most of the blog. Links from the homepage are
+ * one of the strongest discovery signals available for fixing that.
+ *
+ * Uses the `featured` frontmatter flag, which had existed unused since the
+ * blog was built. Falls back to newest-first so the section is never empty
+ * if every flag is cleared.
+ */
+export async function getFeaturedPosts(limit = 6): Promise<PostMeta[]> {
+  const all = await getAllPostsMeta();
+  const featured = all.filter((p) => p.featured);
+  return (featured.length ? featured : all).slice(0, limit);
+}
