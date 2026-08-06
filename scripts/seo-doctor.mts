@@ -271,6 +271,30 @@ async function checkLiveMeta(fallback: FallbackFields) {
         `${route} says "U.S. high schoolers" but the FAQ and regional pricing say students can join from anywhere.`,
       );
     }
+
+    // Crawl paths into the blog. The homepage holds the most authority on the
+    // site and for a long time passed none of it on — it linked to zero posts,
+    // which is a large part of why most of the 135 guides aren't indexed.
+    if (route === "/") {
+      const postLinks = new Set(
+        [...html.matchAll(/href="\/blog\/([a-z0-9-]+)"/g)].map((m) => m[1]),
+      );
+      postLinks.delete("category");
+      const hubLinks = new Set(
+        [...html.matchAll(/href="\/blog\/category\/([a-z0-9-]+)"/g)].map((m) => m[1]),
+      );
+
+      if (postLinks.size === 0) {
+        fail("homepage links to 0 blog posts — the blog gets no authority from it");
+      } else {
+        pass(`homepage links to ${postLinks.size} blog posts`);
+      }
+      if (hubLinks.size === 0) {
+        fail("homepage links to 0 category hubs");
+      } else {
+        pass(`homepage links to ${hubLinks.size} category hubs`);
+      }
+    }
   }
 }
 

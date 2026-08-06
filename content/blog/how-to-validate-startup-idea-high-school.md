@@ -4,6 +4,7 @@ description: "Validate a startup idea by talking to 10 potential customers befor
 date: "2026-03-06"
 updated: "2026-03-06"
 category: "Validate"
+featured: true
 author: "team"
 tags: ["validate startup idea", "high school entrepreneurship", "idea validation", "customer interviews", "student founders"]
 ---

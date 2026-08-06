@@ -4,6 +4,7 @@ description: "An MVP is the smallest version of your product that lets a real us
 date: "2026-03-20"
 updated: "2026-03-20"
 category: "Build"
+featured: true
 author: "team"
 tags: ["MVP", "minimum viable product", "what is an mvp", "build an mvp", "product"]
 ---
