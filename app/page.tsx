@@ -13,7 +13,9 @@ import Footer from "@/components/footer";
 import StickyMobileCta from "@/components/sticky-mobile-cta";
 import { ChallengeMarquee } from "@/components/challenge-marquee";
 import { ChallengeWinners } from "@/components/challenge-winners";
+import { FeaturedGuides } from "@/components/featured-guides";
 import { getSiteConfig, metaDescription } from "@/lib/site-config";
+import { getFeaturedPosts, getAllPostsMeta } from "@/lib/blog";
 import { getActiveChallenge, getPublicWinners } from "@/lib/challenges";
 import { getCountryFromHeaders } from "@/lib/pricing";
 import { getProfile, roleHome } from "@/lib/auth";
@@ -47,12 +49,15 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Home() {
   const countryCode = getCountryFromHeaders(headers());
-  const [config, profile, activeChallenge, winners] = await Promise.all([
-    getSiteConfig({ countryCode }),
-    getProfile(),
-    getActiveChallenge(),
-    getPublicWinners(),
-  ]);
+  const [config, profile, activeChallenge, winners, featured, allPosts] =
+    await Promise.all([
+      getSiteConfig({ countryCode }),
+      getProfile(),
+      getActiveChallenge(),
+      getPublicWinners(),
+      getFeaturedPosts(6),
+      getAllPostsMeta(),
+    ]);
   const authedHome = profile ? await roleHome(profile.role) : null;
   return (
     <main className="min-h-screen bg-paper">
@@ -77,6 +82,10 @@ export default async function Home() {
       <Deliverables />
       <Founder contactEmail={config.settings.contactEmail} />
       <ChallengeWinners winners={winners} />
+      {/* Placed before pricing on purpose: someone weighing $130 should see
+          proof the teaching is good before they see the number. It also gives
+          the blog its only link from the site's strongest page. */}
+      <FeaturedGuides posts={featured} total={allPosts.length} />
       <Pricing config={config} />
       <FAQ config={config} />
       <CTA config={config} />

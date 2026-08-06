@@ -5,6 +5,7 @@ description: "A 2026 guide to startup accelerator programs for high schoolers: w
 date: "2026-06-12"
 updated: "2026-06-12"
 category: "Playbook"
+featured: true
 author: "team"
 tags: ["startup accelerator for high schoolers", "teen accelerator", "summer programs", "entrepreneurship programs", "high school startup program"]
 ---

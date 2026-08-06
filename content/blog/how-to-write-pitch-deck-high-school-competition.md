@@ -4,6 +4,7 @@ description: "A winning pitch deck is about 10 slides that tell one story. The s
 date: "2026-05-29"
 updated: "2026-05-29"
 category: "Pitch"
+featured: true
 author: "team"
 tags: ["pitch deck", "slides", "startup competition", "demo day", "fundraising"]
 ---
