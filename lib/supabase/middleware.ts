@@ -43,7 +43,39 @@ const FALLBACK_HOME: Record<string, string> = {
   investor: "/investor",
 };
 
+/**
+ * Paths that are now fully prerendered and read no session at all.
+ *
+ * Vercel runs middleware BEFORE the CDN cache lookup, so even a static HTML
+ * hit pays for whatever happens in here. Since these routes stopped touching
+ * cookies (that is what let them prerender), constructing a Supabase client
+ * and validating a JWT for them is pure overhead on the site's highest-volume
+ * traffic — 135 blog articles plus the legal pages.
+ *
+ * Everything else keeps going through updateSession, because that is what
+ * refreshes an expiring access token; a route that reads the session and is
+ * missing from the middleware would silently show a signed-in user as signed
+ * out. Only add a path here once it genuinely reads no auth.
+ */
+const PUBLIC_STATIC_PREFIXES = [
+  "/blog",
+  "/privacy",
+  "/terms",
+  "/refund-policy",
+  "/sponsors",
+];
+
+function isPublicStatic(path: string): boolean {
+  return PUBLIC_STATIC_PREFIXES.some(
+    (p) => path === p || path.startsWith(p + "/"),
+  );
+}
+
 export async function updateSession(request: NextRequest) {
+  if (isPublicStatic(request.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+
   // Stamp the request pathname onto a header so downstream server
   // components (admin layout, page-level guards) can read it via
   // next/headers without parsing the URL on their own. Next.js doesn't

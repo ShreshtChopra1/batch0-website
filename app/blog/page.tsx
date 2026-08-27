@@ -1,8 +1,7 @@
 import Link from "next/link";
 import Navbar from "@/components/navbar";
 import Footer from "@/components/footer";
-import { getSiteConfig } from "@/lib/site-config";
-import { getProfile, roleHome } from "@/lib/auth";
+import { getPublicSiteConfig } from "@/lib/site-config";
 import { getAllPostsMeta, formatPostDate, type PostMeta } from "@/lib/blog";
 
 const SITE = "https://batch0.org";
@@ -54,13 +53,17 @@ function PostRow({ post }: { post: PostMeta }) {
   );
 }
 
+// The index lists every published post. Nothing on it is per-visitor, so it
+// prerenders and revalidates on the same hour as the posts themselves;
+// publishing from the admin panel calls revalidatePath("/blog") and shows up
+// immediately regardless.
+export const revalidate = 3600;
+
 export default async function BlogIndexPage() {
-  const [config, profile, posts] = await Promise.all([
-    getSiteConfig(),
-    getProfile(),
+  const [config, posts] = await Promise.all([
+    getPublicSiteConfig(),
     getAllPostsMeta(),
   ]);
-  const authedHome = profile ? await roleHome(profile.role) : null;
   const cohortLabel = config.derived.cohortLabel || "the next cohort";
 
   // Blog collection JSON-LD — lets search + AI engines understand this is a
@@ -101,7 +104,7 @@ export default async function BlogIndexPage() {
 
   return (
     <main className="min-h-screen bg-paper">
-      <Navbar authedHome={authedHome} cohortLabel={cohortLabel} />
+      <Navbar cohortLabel={cohortLabel} />
 
       <section className="px-5 pb-10 pt-14 sm:px-6 sm:pt-20">
         <div className="mx-auto max-w-[1100px]">

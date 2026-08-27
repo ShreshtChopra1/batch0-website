@@ -289,9 +289,11 @@ export default async function DashboardHome() {
               { href: "/dashboard/settings", label: "Settings" },
             ]
               .filter((l) => {
-                // Kickoff only exists pre-cohort, and only once enrolled.
+                // Kickoff stays with an enrolled student for the whole
+                // cohort — a countdown, then the record of day one. Mirrors
+                // filterStudentNavItem in lib/nav-config.ts.
                 if (l.href === "/dashboard/kickoff") {
-                  return preCohort && access.enrolled;
+                  return access.enrolled;
                 }
                 // Don't dangle dead-end links at a student whose seat
                 // isn't paid for — same set the sidebar hides.

@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  createAdminClient,
+  createPublicReadClient,
+} from "@/lib/supabase/admin";
 import {
   rowToChallenge,
   HTTP_URL_RE,
@@ -89,9 +92,12 @@ function fieldSchema(q: ChallengeQuestion): z.ZodTypeAny {
 // --- Reads (service-role, no-store, never throw) --------------------------
 
 /** The single active challenge (drives the hero marquee + apply page). */
+// Public read: same data for every visitor, so it goes through the cacheable
+// client. Using the no-store admin client here would force /challenges (and
+// anything else showing the marquee) to render per-request.
 export async function getActiveChallenge(): Promise<Challenge | null> {
   try {
-    const admin = createAdminClient();
+    const admin = createPublicReadClient();
     const { data } = await admin
       .from("challenges")
       .select("*")
@@ -145,7 +151,8 @@ export async function getPublicWinners(
   opts: { challengeSlug?: string; limit?: number } = {},
 ): Promise<PublicWinner[]> {
   try {
-    const admin = createAdminClient();
+    // Public, identical for every visitor — cacheable client, see above.
+    const admin = createPublicReadClient();
     let q = admin
       .from("challenge_winners_public")
       .select("*")

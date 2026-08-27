@@ -28,11 +28,12 @@ export async function roleHome(role: Role): Promise<string> {
   return resolveHome(caps, row?.home_path ?? null);
 }
 
-export async function getUser() {
+/** Request-cached: every guard below calls it, and it's a network hop. */
+export const getUser = cache(async function getUser() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   return user;
-}
+});
 
 export async function requireUser() {
   const user = await getUser();
@@ -40,7 +41,16 @@ export async function requireUser() {
   return user;
 }
 
-export async function getProfile(): Promise<Profile | null> {
+/**
+ * The signed-in user's profile row.
+ *
+ * Request-cached, like getViewer() below. Without it a single render pays for
+ * this twice or more: the layout resolves a profile, then the page calls
+ * getProfile() again, and each call is an auth.getUser() network round trip to
+ * Supabase plus a profiles select — four serial hops to answer a question that
+ * cannot change inside one request.
+ */
+export const getProfile = cache(async function getProfile(): Promise<Profile | null> {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -98,7 +108,7 @@ export async function getProfile(): Promise<Profile | null> {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
-}
+});
 
 // ---------------------------------------------------------------------------
 // Capabilities

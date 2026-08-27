@@ -106,7 +106,13 @@ body {
   *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
+    /* Zeroing the duration alone is not enough: an animation with a delay and
+     * `fill-mode: both` still holds its 0% frame for the length of the delay.
+     * The hero staggers up to 280ms that way, so a reader who asked for no
+     * motion would sit and watch invisible text appear in sequence anyway. */
+    animation-delay: 0ms !important;
     transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
   }
 }
 

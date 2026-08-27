@@ -4,9 +4,8 @@ import Footer from "@/components/footer";
 import { Ledger } from "@/components/ledger";
 import { ApplyCta } from "@/components/apply-cta";
 import { WEEKS } from "@/components/curriculum";
-import { getSiteConfig } from "@/lib/site-config";
+import { getPublicSiteConfig } from "@/lib/site-config";
 import { getCountryFromHeaders } from "@/lib/pricing";
-import { getProfile, roleHome } from "@/lib/auth";
 
 export const metadata = {
   title: "Program: Four Sprints to Demo Day — batch0",
@@ -41,21 +40,17 @@ const DETAIL: Record<string, string[]> = {
 };
 
 export default async function ProgramPage() {
+  // Still dynamic — regional tuition pricing genuinely depends on the
+  // visitor's geo header. But the cookie read is gone, so this is now a
+  // single cached config read instead of a four-hop auth waterfall.
   const countryCode = getCountryFromHeaders(headers());
-  const [config, profile] = await Promise.all([
-    getSiteConfig({ countryCode }),
-    getProfile(),
-  ]);
-  const authedHome = profile ? await roleHome(profile.role) : null;
+  const config = await getPublicSiteConfig({ countryCode });
   const { derived } = config;
   const cohortLabel = derived.cohortLabel || "the next cohort";
 
   return (
     <main className="min-h-screen bg-paper">
-      <Navbar
-        authedHome={authedHome}
-        cohortLabel={derived.cohortLabel || "the next cohort"}
-      />
+      <Navbar cohortLabel={derived.cohortLabel || "the next cohort"} />
 
       <section className="px-5 pb-16 pt-14 sm:px-6 sm:pt-20 md:pb-20 md:pt-24">
         <div className="mx-auto grid max-w-[1100px] gap-12 md:grid-cols-12 md:gap-8">

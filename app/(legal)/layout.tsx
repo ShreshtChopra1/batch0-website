@@ -1,6 +1,12 @@
 import Navbar from "@/components/navbar";
 import Footer from "@/components/footer";
 
+// Static legal text over a static shell. The only thing that was ever dynamic
+// here was the footer's contact email, and that now reads from a tagged cache.
+// An hour keeps the copyright year honest across New Year without giving the
+// page any per-request work.
+export const revalidate = 3600;
+
 export default function LegalLayout({
   children,
 }: {

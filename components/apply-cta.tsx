@@ -1,5 +1,6 @@
 "use client";
 import { track } from "@vercel/analytics";
+import { AuthLabel } from "@/components/auth-label";
 
 /**
  * The one conversion action, with one name everywhere: "Apply for Cohort N".
@@ -10,12 +11,19 @@ import { track } from "@vercel/analytics";
 export function ApplyCta({
   href = "/apply",
   label,
+  signedInLabel,
   location,
   variant = "primary",
   className = "",
 }: {
   href?: string;
   label: string;
+  /**
+   * Shown instead of `label` once the browser confirms a session. Only pass
+   * it alongside an auth-neutral `href` such as /home — the point is to keep
+   * the page prerenderable, so the href must be right before hydration.
+   */
+  signedInLabel?: string;
   /** Where on the page this CTA lives — e.g. "hero", "final-cta", "navbar". */
   location: string;
   variant?: "primary" | "secondary";
@@ -34,7 +42,11 @@ export function ApplyCta({
       className={`${base} ${variants[variant]} ${className}`}
       onClick={() => track("apply_click", { location })}
     >
-      {label}
+      {signedInLabel ? (
+        <AuthLabel signedOut={label} signedIn={signedInLabel} />
+      ) : (
+        label
+      )}
     </a>
   );
 }

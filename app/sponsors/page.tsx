@@ -2,8 +2,7 @@ import Navbar from "@/components/navbar";
 import Footer from "@/components/footer";
 import { TIERS } from "./tiers";
 import { SponsorContactForm } from "./sponsor-contact-form";
-import { getSiteConfig } from "@/lib/site-config";
-import { getProfile, roleHome } from "@/lib/auth";
+import { getPublicSiteConfig } from "@/lib/site-config";
 
 export const metadata = {
   title: "Fund Grants for High-School Founders — batch0",
@@ -29,16 +28,15 @@ const why = (capacityLabel: string) => [
   },
 ];
 
+// Pure marketing copy over the cohort record — nothing per-visitor.
+export const revalidate = 3600;
+
 export default async function SponsorsPage() {
-  const [config, profile] = await Promise.all([getSiteConfig(), getProfile()]);
-  const authedHome = profile ? await roleHome(profile.role) : null;
+  const config = await getPublicSiteConfig();
 
   return (
     <main className="min-h-screen bg-paper">
-      <Navbar
-        authedHome={authedHome}
-        cohortLabel={config.derived.cohortLabel || "the next cohort"}
-      />
+      <Navbar cohortLabel={config.derived.cohortLabel || "the next cohort"} />
 
       {/* Hero */}
       <section className="px-5 pb-14 pt-14 sm:px-6 sm:pt-20 md:pb-20 md:pt-24">

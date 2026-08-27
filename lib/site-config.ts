@@ -1,4 +1,9 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { cache } from "react";
+import { unstable_cache } from "next/cache";
+import {
+  createAdminClient,
+  createPublicReadClient,
+} from "@/lib/supabase/admin";
 import { getRegionalPrice } from "@/lib/pricing";
 
 // Single source of truth for public, admin-editable site facts (active
@@ -224,12 +229,93 @@ function derive(
  * pricing — see `lib/pricing.ts`. When omitted, the cohort's default
  * price is used.
  */
+/**
+ * Request-cached, but NOT cached across requests: this still reads through
+ * the no-store admin client, because the gating flags it carries
+ * (`applications_open`, `founder_pass_early_access`, `referrals_enabled`)
+ * decide what a signed-in person is allowed to do and must never be stale.
+ *
+ * The React cache matters because the /dashboard tree resolves this twice in
+ * one render — once in the layout for `referralsEnabled`, once in the page —
+ * which was eight queries to answer the same question.
+ */
+const loadPrivateData = cache(() => loadSiteConfigData(createAdminClient()));
+
 export async function getSiteConfig(
   opts: { countryCode?: string | null } = {},
 ): Promise<SiteConfig> {
-  const countryCode = opts.countryCode ?? null;
-  const admin = createAdminClient();
+  return assemble(await loadPrivateData(), opts.countryCode ?? null);
+}
 
+/**
+ * The same config, read through a cacheable client and memoised across
+ * requests. This is what public marketing pages call.
+ *
+ * Two things have to be true at once for a marketing page to prerender, and
+ * this function is one of them (the other is not touching cookies()):
+ *
+ *  1. The read must not be `no-store` — hence createPublicReadClient(). Do NOT
+ *     "fix" this by wrapping the no-store client in unstable_cache: the route
+ *     then prerenders, the DynamicServerError is thrown onto a *copy* of the
+ *     static-generation store where nothing reads it, postgrest swallows it as
+ *     a failed request, and getSiteConfig quietly returns FALLBACK_COHORT. You
+ *     get a green build serving hardcoded prices with the "N spots left" and
+ *     "Applications close in N days" signals silently gone.
+ *  2. unstable_cache gives it a tag, so an admin editing settings or a cohort
+ *     publishes immediately instead of waiting out `revalidate`. See
+ *     revalidateTag(SITE_CONFIG_TAG) in the admin actions.
+ *
+ * Country is applied per-request on top of the cached data — `derive()` is
+ * pure, so regional pricing costs nothing and isn't baked into the cache.
+ */
+export const SITE_CONFIG_TAG = "site-config";
+
+const loadPublicData = unstable_cache(
+  async () => loadSiteConfigData(createPublicReadClient()),
+  ["site-config-public"],
+  { revalidate: 300, tags: [SITE_CONFIG_TAG] },
+);
+
+export async function getPublicSiteConfig(
+  opts: { countryCode?: string | null } = {},
+): Promise<SiteConfig> {
+  const data = await loadPublicData();
+  if (!data.cohort && process.env.NODE_ENV === "production") {
+    // Loud on purpose. A null cohort here means the marketing site is serving
+    // FALLBACK_COHORT — dates and price hand-synced on a date in the past —
+    // and every other symptom of that is invisible.
+    console.error(
+      "[site-config] public read returned no cohort; marketing pages are on FALLBACK_COHORT",
+    );
+  }
+  return assemble(data, opts.countryCode ?? null);
+}
+
+type SiteConfigData = {
+  cohort: ActiveCohort | null;
+  settings: SiteSettings;
+  enrolledCount: number;
+};
+
+function assemble(
+  data: SiteConfigData,
+  countryCode: string | null,
+): SiteConfig {
+  return {
+    cohort: data.cohort,
+    settings: data.settings,
+    derived: derive(
+      data.cohort,
+      data.enrolledCount,
+      data.settings.applicationsOpen,
+      countryCode,
+    ),
+  };
+}
+
+async function loadSiteConfigData(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<SiteConfigData> {
   const [settingsRes, pinnedIdRes] = await Promise.all([
     admin.from("site_settings").select("key, value"),
     // We fetch the pinned cohort id separately so the cohort row query
@@ -337,14 +423,5 @@ export async function getSiteConfig(
     if (typeof count === "number") enrolledCount = count;
   }
 
-  return {
-    cohort,
-    settings,
-    derived: derive(
-      cohort,
-      enrolledCount,
-      settings.applicationsOpen,
-      countryCode,
-    ),
-  };
+  return { cohort, settings, enrolledCount };
 }

@@ -73,6 +73,16 @@ export type StudentAccess = {
   cohortStartsOn: string | null;
   /** Name of that cohort, when pre-cohort. */
   cohortName: string | null;
+  /**
+   * The cohort this student is currently tied to — the soonest not-yet-started
+   * one, or the most recently started one when they're all underway. Unlike
+   * `cohortStartsOn` / `cohortName` above (which stay pre-cohort-only, because
+   * callers branch on them meaning "pre-cohort"), this is resolved whatever
+   * the lifecycle stage, so a page like /dashboard/kickoff can look up cohort
+   * content at any point in the program. Null for staff and for a student
+   * with no cohort assigned yet.
+   */
+  cohortId: string | null;
 };
 
 const NO_PRE_COHORT = {
@@ -82,6 +92,11 @@ const NO_PRE_COHORT = {
 } as const;
 
 type NamedCohort = PreCohortCohort & { name: string | null };
+
+/** Soonest start date first; dateless cohorts sort last. */
+function byStartDate(a: PreCohortCohort, b: PreCohortCohort): number {
+  return (a.starts_on ?? "9999-12-31") < (b.starts_on ?? "9999-12-31") ? -1 : 1;
+}
 
 /** Supabase embeds to-one relations as object or single-element array. */
 function embeddedCohort(c: unknown): NamedCohort | null {
@@ -103,6 +118,7 @@ export const getStudentAccess = cache(async function getStudentAccess(
       applicationStatus: null,
       role,
       staff: true,
+      cohortId: null,
       ...NO_PRE_COHORT,
     };
   }
@@ -116,6 +132,7 @@ export const getStudentAccess = cache(async function getStudentAccess(
       applicationStatus: null,
       role,
       staff: false,
+      cohortId: null,
       ...NO_PRE_COHORT,
     };
   }
@@ -140,6 +157,7 @@ export const getStudentAccess = cache(async function getStudentAccess(
   let preCohort = false;
   let cohortStartsOn: string | null = null;
   let cohortName: string | null = null;
+  let cohortId: string | null = null;
   if (enrolled || accepted) {
     // Every cohort the student is tied to: all enrollments + the accepted
     // application's cohort. Deduped by id; the embeds ride along on the
@@ -153,17 +171,27 @@ export const getStudentAccess = cache(async function getStudentAccess(
       const c = embeddedCohort(app.cohort);
       if (c) byId.set(app.cohort_id, c);
     }
-    const cohorts = Array.from(byId.values());
+    const entries = Array.from(byId.entries());
+    const cohorts = entries.map(([, c]) => c);
     const today = todayISO();
     preCohort = computePreCohort(true, cohorts, today);
+
+    // The one cohort that represents "where this student is". Prefer the
+    // soonest one still ahead of them; once everything has started, the most
+    // recently started one is the cohort they're actually living in.
+    const upcoming = entries
+      .filter(([, c]) => !cohortHasStarted(c, today))
+      .sort(([, a], [, b]) => byStartDate(a, b))[0];
+    const current =
+      upcoming ??
+      entries
+        .filter(([, c]) => cohortHasStarted(c, today))
+        .sort(([, a], [, b]) => byStartDate(b, a))[0];
+    cohortId = current?.[0] ?? null;
+
     if (preCohort) {
-      const upcoming = cohorts
-        .filter((c) => !cohortHasStarted(c, today))
-        .sort((a, b) =>
-          (a.starts_on ?? "9999-12-31") < (b.starts_on ?? "9999-12-31") ? -1 : 1,
-        )[0];
-      cohortStartsOn = upcoming?.starts_on ?? null;
-      cohortName = upcoming?.name ?? null;
+      cohortStartsOn = upcoming?.[1]?.starts_on ?? null;
+      cohortName = upcoming?.[1]?.name ?? null;
     }
   }
 
@@ -175,6 +203,7 @@ export const getStudentAccess = cache(async function getStudentAccess(
     preCohort,
     cohortStartsOn,
     cohortName,
+    cohortId,
   };
 });
 

@@ -48,13 +48,26 @@ export default async function ApplicationPage({
     ? await syncCheckoutSession(searchParams.session_id, user.id)
     : null;
 
-  const { data: app } = await supabase
-    .from("applications")
-    .select("*, cohort:cohorts(*)")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // These three are mutually independent, and used to run as three separate
+  // round trips one after another — the application row, then the pass check,
+  // then the profile/access pair — with each one's latency stacked on the
+  // last. Only `rebuild` below genuinely depends on the results.
+  const [{ data: app }, holdsPass, access] = await Promise.all([
+    supabase
+      .from("applications")
+      .select("*, cohort:cohorts(*)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // founder_passes has a self-select policy, so the user's own client can
+    // answer "do I hold one". Reused below for the discount, the priority-lane
+    // note, and rebuild eligibility.
+    hasFounderPass(supabase, user.id),
+    // The SAME pre-cohort decision the middleware and sidebar make, so the
+    // copy and CTAs here can never contradict what the routes allow.
+    getProfile().then((p) => getStudentAccess(p?.role ?? "student")),
+  ]);
 
   if (!app) {
     return (
@@ -70,10 +83,6 @@ export default async function ApplicationPage({
 
   const basePriceCents = app.cohort?.price_cents ?? 13000;
   const country = getCountryFromHeaders(headers());
-  // founder_passes has a self-select policy, so the user's own client can
-  // answer "do I hold one". Computed once and reused for the discount, the
-  // priority-lane note, and the rebuild eligibility below.
-  const holdsPass = await hasFounderPass(supabase, user.id);
   // Mirror the checkout math (app/api/stripe/checkout) exactly — regional
   // price, then the founder-pass discount — so the number on this card is
   // the number Stripe charges.
@@ -95,11 +104,6 @@ export default async function ApplicationPage({
       ? await getRebuildForUser(createAdminClient(), user.id)
       : null;
 
-  // Whether the student is past pre-cohort lockdown — the SAME decision
-  // the middleware and sidebar make (via getStudentAccess), so the copy
-  // and CTAs here can never contradict what the routes actually allow.
-  const profile = await getProfile();
-  const access = await getStudentAccess(profile?.role ?? "student");
   const started = !access.preCohort;
   const startLabel = fmtDateOnly(
     app.cohort?.starts_on ?? access.cohortStartsOn,

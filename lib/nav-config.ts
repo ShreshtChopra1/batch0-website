@@ -151,10 +151,13 @@ export function filterStudentNavItem(
   ctx: StudentNavContext,
 ): boolean {
   if (ctx.preCohort && !PRE_COHORT_ALLOWED_HREFS.has(item.href)) return false;
-  // Kickoff only exists during the pre-cohort window, and only once the
-  // seat is paid for — the page redirects home for everyone else.
+  // Kickoff belongs to an enrolled student for the whole life of the cohort:
+  // a countdown before day one, the record of day one afterwards. It used to
+  // vanish the moment the cohort started, which turned every bookmark and
+  // every link in a welcome email into a silent redirect home. Staff resolve
+  // as enrolled (lib/access.ts) so they can preview the page they edit.
   if (item.href === "/dashboard/kickoff") {
-    return ctx.preCohort && ctx.enrolled;
+    return ctx.enrolled;
   }
   if (item.href === "/dashboard/ai") return ctx.aiAccess;
   if (item.href === "/dashboard/community") return ctx.discordEnabled;

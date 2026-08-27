@@ -12,30 +12,31 @@ import Footer from "@/components/footer";
 import StickyMobileCta from "@/components/sticky-mobile-cta";
 import { ChallengeMarquee } from "@/components/challenge-marquee";
 import { ChallengeWinners } from "@/components/challenge-winners";
-import { getSiteConfig } from "@/lib/site-config";
+import { getPublicSiteConfig } from "@/lib/site-config";
 import { getActiveChallenge, getPublicWinners } from "@/lib/challenges";
 import { getCountryFromHeaders } from "@/lib/pricing";
-import { getProfile, roleHome } from "@/lib/auth";
 
 // Title/description inherit from the root layout; the canonical is set
 // here (not in the layout) so child routes don't inherit "/".
 export const metadata = { alternates: { canonical: "/" } };
 
+// This page still reads headers() for regional tuition pricing, so it stays
+// dynamic — geo is genuinely per-visitor and there is no honest way to
+// prerender it. What it no longer does is read cookies: the auth-dependent
+// CTA moved to /home and to a client-resolved label, which removes three
+// serial Supabase round trips (auth.getUser → profiles → app_roles) from the
+// critical path of the site's highest-traffic page. The remaining reads are
+// one parallel wave, and site config is now served from a tagged cache.
 export default async function Home() {
   const countryCode = getCountryFromHeaders(headers());
-  const [config, profile, activeChallenge, winners] = await Promise.all([
-    getSiteConfig({ countryCode }),
-    getProfile(),
+  const [config, activeChallenge, winners] = await Promise.all([
+    getPublicSiteConfig({ countryCode }),
     getActiveChallenge(),
     getPublicWinners(),
   ]);
-  const authedHome = profile ? await roleHome(profile.role) : null;
   return (
     <main className="min-h-screen bg-paper">
-      <Navbar
-        authedHome={authedHome}
-        cohortLabel={config.derived.cohortLabel || "the next cohort"}
-      />
+      <Navbar cohortLabel={config.derived.cohortLabel || "the next cohort"} />
       {activeChallenge && (
         <ChallengeMarquee
           challenge={{
@@ -48,7 +49,7 @@ export default async function Home() {
           }}
         />
       )}
-      <Hero config={config} authedHome={authedHome} />
+      <Hero config={config} />
       <HowItWorks config={config} />
       <Deliverables />
       <Founder contactEmail={config.settings.contactEmail} />
@@ -57,7 +58,7 @@ export default async function Home() {
       <FAQ config={config} />
       <CTA config={config} />
       <Footer config={config} />
-      <StickyMobileCta config={config} authedHome={authedHome} />
+      <StickyMobileCta config={config} />
     </main>
   );
 }

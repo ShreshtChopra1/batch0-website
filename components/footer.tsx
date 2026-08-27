@@ -1,13 +1,18 @@
 import React from "react";
 import { Wordmark } from "@/components/wordmark";
 import Link from "next/link";
-import { getSiteConfig, type SiteConfig } from "@/lib/site-config";
+import { getPublicSiteConfig, type SiteConfig } from "@/lib/site-config";
 
 // Footer can take an explicit config (lets a page render in a single
 // pass without re-querying) or self-resolve when used inside a layout
 // that doesn't already have one.
+//
+// The self-resolving path uses the cacheable read deliberately. It is the
+// footer of every legal page, and when it went through the no-store admin
+// client it was — on its own, for one mailto: address — the reason /privacy,
+// /terms and /refund-policy were rendered per-request instead of prerendered.
 export default async function Footer({ config }: { config?: SiteConfig }) {
-  const resolved = config ?? (await getSiteConfig());
+  const resolved = config ?? (await getPublicSiteConfig());
   const contactEmail = resolved.settings.contactEmail;
   const links = [
     { href: "/program", label: "Program" },

@@ -3,17 +3,8 @@ import type { SiteConfig } from "@/lib/site-config";
 import { Ledger } from "@/components/ledger";
 import { ApplyCta } from "@/components/apply-cta";
 
-export default function Hero({
-  config,
-  authedHome,
-}: {
-  config: SiteConfig;
-  /** If the visitor is already signed in, route the primary CTA to
-   *  their role home instead of the apply pitch. */
-  authedHome?: string | null;
-}) {
+export default function Hero({ config }: { config: SiteConfig }) {
   const { derived } = config;
-  const isAuthed = !!authedHome;
   const cohortLabel = derived.cohortLabel || "the next cohort";
 
   return (
@@ -45,19 +36,16 @@ export default function Hero({
           </p>
 
           <div className="animate-rise rise-4 mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-            {isAuthed ? (
-              <a
-                href={authedHome!}
-                className="press inline-flex items-center justify-center gap-2 rounded-md bg-phosphor px-5 py-3.5 text-[15px] font-semibold text-on-phosphor shadow-cta hover:bg-phosphor-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-              >
-                Go to dashboard
-              </a>
-            ) : (
-              <ApplyCta
-                label={`Apply for ${cohortLabel}`}
-                location="hero"
-              />
-            )}
+            {/* /home redirects a signed-in visitor to their own panel and
+                everyone else to /apply — so this stays a constant href and
+                the hero can be prerendered. Only the label resolves in the
+                browser, and it does so without shifting anything. */}
+            <ApplyCta
+              href="/home"
+              label={`Apply for ${cohortLabel}`}
+              signedInLabel="Go to dashboard"
+              location="hero"
+            />
             <a
               href="/program"
               className="press inline-flex items-center justify-center rounded-md border border-line px-5 py-3.5 text-[15px] font-medium text-ink hover:border-ink/30"
@@ -66,11 +54,9 @@ export default function Hero({
             </a>
           </div>
 
-          {!isAuthed && (
-            <p className="animate-rise rise-5 mt-4 text-[13px] text-ink-faint">
-              Free to apply · {derived.priceLabel} charged only if accepted
-            </p>
-          )}
+          <p className="animate-rise rise-5 mt-4 text-[13px] text-ink-faint">
+            Free to apply · {derived.priceLabel} charged only if accepted
+          </p>
         </div>
 
         {/* The Cohort Ledger — every row rendered from the live cohort

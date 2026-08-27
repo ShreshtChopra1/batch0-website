@@ -1,6 +1,7 @@
 "use server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { SITE_CONFIG_TAG } from "@/lib/site-config";
 import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import { runAction, type ActionResult } from "@/lib/action-result";
@@ -61,6 +62,12 @@ export async function saveSiteSettings(
       payload: input,
     });
     revalidatePath("/admin/settings");
+    // One tag covers every surface that reads the cohort/settings record —
+    // the homepage, the program page, sponsors, challenges, the legal footer
+    // and all 135 blog posts. Those are prerendered now, so without this an
+    // admin's price or date change would sit behind the cache's revalidate
+    // window on every page except the two listed explicitly below.
+    revalidateTag(SITE_CONFIG_TAG);
     revalidatePath("/");
     revalidatePath("/apply");
     revalidatePath("/opengraph-image");
