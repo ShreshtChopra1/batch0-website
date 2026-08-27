@@ -1,34 +1,35 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+
+/**
+ * The session cookie @supabase/ssr writes: `sb-<projectRef>-auth-token`, split
+ * into `.0` / `.1` when it outgrows the cookie size limit. Its
+ * DEFAULT_COOKIE_OPTIONS set `httpOnly: false`, so the document can see it.
+ */
+const AUTH_COOKIE = /(?:^|;\s*)sb-[^=;]*-auth-token(?:\.\d+)?=/;
 
 /**
  * Whether the visitor is signed in, resolved in the browser.
  *
- * `getSession()` on the @supabase/ssr browser client reads the `sb-*-auth-token`
- * cookie that is already on the document — it is a local read, not a network
- * round trip. That is what makes this cheap enough to do on a page that is
- * otherwise static HTML off the CDN.
+ * Deliberately a raw cookie test rather than `createBrowserClient().auth
+ * .getSession()`. The SDK call is also a local read, but *importing* it drags
+ * auth-js, postgrest-js, realtime-js, storage-js and functions-js into the
+ * shared client chunk — measured at 243 KB raw / 54 KB brotli on a live blog
+ * article, on pages whose entire reason for existing in this changeset is to
+ * be fast. Nothing in the marketing tree needs a Supabase client; it needs one
+ * boolean.
  *
- * Always false on the server and on the first client render, so the SSR output
- * and the hydrated output agree. It flips one tick later for signed-in
- * visitors.
+ * Presence, not validity: an expired-but-present cookie reads as signed in.
+ * That is safe here because it only chooses a word — the href is the constant
+ * /home, which resolves the destination server-side either way.
+ *
+ * False on the server and on the first client render so SSR and hydration
+ * agree; it flips one tick later.
  */
 export function useIsAuthed(): boolean {
   const [authed, setAuthed] = useState(false);
   useEffect(() => {
-    let live = true;
-    createClient()
-      .auth.getSession()
-      .then(({ data }) => {
-        if (live) setAuthed(!!data.session);
-      })
-      // A malformed or expired cookie just means "signed out" here. The worst
-      // case is a visitor seeing "Apply" and being redirected by /home.
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
+    setAuthed(AUTH_COOKIE.test(document.cookie));
   }, []);
   return authed;
 }

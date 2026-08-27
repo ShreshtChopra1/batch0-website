@@ -5,4 +5,9 @@
 /docs
 /out
 /supabase
-/scripts
+
+# NOT /scripts. The build script now chains scripts/verify-static.mjs, which
+# fails the deploy if the marketing routes stop being prerendered — excluding
+# the directory would make every Vercel build die on a missing module. The
+# whole directory is 144 KB; the upload savings this was buying were noise
+# next to /docs.
