@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/auth";
 import { getAllRoles } from "@/lib/roles";
 import { can, covers } from "@/lib/permissions";
 import { StudentsBulkList } from "./bulk-list";
+import { PeopleSearch } from "./people-search";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Role } from "@/lib/types";
 
@@ -26,7 +27,7 @@ function parsePage(raw: string | undefined): number {
 export default async function AdminStudentsPage({
   searchParams,
 }: {
-  searchParams: { role?: string; page?: string };
+  searchParams: { role?: string; page?: string; q?: string };
 }) {
   const { caps } = await requirePermission("people.view");
   const admin = createAdminClient();
@@ -41,9 +42,16 @@ export default async function AdminStudentsPage({
   const page = parsePage(searchParams.page);
   const offset = (page - 1) * PAGE_SIZE;
 
-  // Paged rather than a one-shot 5000-row fetch: the directory grows without
-  // bound and every row used to ride the RSC payload into the client list.
-  // count:'exact' drives the pager; role filtering stays in SQL.
+  // Free-text search over name + email. Sanitized before it reaches the
+  // PostgREST `.or()` grammar: commas/parens/asterisks are separators or
+  // wildcards there, so strip them to keep the query well-formed and prevent
+  // filter injection. Length-capped so a pathological term can't bloat the URL.
+  const search = (searchParams.q ?? "").trim().slice(0, 100);
+  const term = search.replace(/[,()*%\\]/g, " ").trim();
+
+  // Paged rather than a one-shot fetch: the directory grows without bound and
+  // every row used to ride the RSC payload into the client list. count:'exact'
+  // drives the pager; role filter and search both stay in SQL.
   let q = admin
     .from("profiles")
     .select(
@@ -53,6 +61,10 @@ export default async function AdminStudentsPage({
     .order("created_at", { ascending: false })
     .range(offset, offset + PAGE_SIZE - 1);
   if (filter !== "all") q = q.eq("role", filter);
+  // Case-insensitive substring match on either column. `*term*` is PostgREST's
+  // wildcard form inside `.or()` (the JS `%` form is only for standalone
+  // `.ilike`).
+  if (term) q = q.or(`full_name.ilike.*${term}*,email.ilike.*${term}*`);
 
   // Tab counts are head-only count queries — one per role plus the "all"
   // total — so no profile rows are transferred just to be counted, and all
@@ -84,6 +96,7 @@ export default async function AdminStudentsPage({
   const pageHref = (p: number) => {
     const params = new URLSearchParams();
     if (filter !== "all") params.set("role", filter);
+    if (search) params.set("q", search);
     if (p > 1) params.set("page", String(p));
     const qs = params.toString();
     return qs ? `/admin/students?${qs}` : "/admin/students";
@@ -127,8 +140,15 @@ export default async function AdminStudentsPage({
         </a>
       </div>
 
-      {/* Role tabs with counts */}
-      <div className="mt-6 flex flex-wrap gap-2">
+      {/* Search by name or email. Server-side (DB ilike) so it spans the whole
+          directory, not just the rows already loaded on this page. */}
+      <div className="mt-6">
+        <PeopleSearch initialQuery={search} role={filter} />
+      </div>
+
+      {/* Role tabs with counts. Each preserves the active search term so
+          switching tabs narrows within the current query instead of clearing it. */}
+      <div className="mt-4 flex flex-wrap gap-2">
         {[{ slug: "all", label: "All" }, ...roles].map((f) => {
           const active = filter === f.slug;
           const count = f.slug === "all" ? allCount ?? 0 : roleCount(f.slug);
@@ -137,14 +157,14 @@ export default async function AdminStudentsPage({
           const isBuiltIn =
             f.slug === "all" || roles.find((r) => r.slug === f.slug)?.is_system;
           if (!isBuiltIn && count === 0 && !active) return null;
+          const params = new URLSearchParams();
+          if (f.slug !== "all") params.set("role", f.slug);
+          if (search) params.set("q", search);
+          const qs = params.toString();
           return (
             <Link
               key={f.slug}
-              href={
-                f.slug === "all"
-                  ? "/admin/students"
-                  : `/admin/students?role=${f.slug}`
-              }
+              href={qs ? `/admin/students?${qs}` : "/admin/students"}
               className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wider transition ${
                 active
                   ? "border-phosphor/30 bg-phosphor/10 text-phosphor-ink"
@@ -156,6 +176,14 @@ export default async function AdminStudentsPage({
           );
         })}
       </div>
+
+      {search && (
+        <p className="mt-3 text-xs text-ink-faint">
+          {totalCount.toLocaleString()} result{totalCount === 1 ? "" : "s"} for{" "}
+          <span className="font-medium text-ink-soft">“{search}”</span>
+          {filter !== "all" ? " in this role" : ""}.
+        </p>
+      )}
 
       <Card className="mt-6 !p-0 overflow-hidden">
         <StudentsBulkList
