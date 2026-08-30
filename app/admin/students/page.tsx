@@ -34,11 +34,15 @@ export default async function AdminStudentsPage({
 
   // Filter tabs come from the roles table, so a role created at /admin/roles
   // shows up here — with its own tab and count — without a code change.
+  // "enrolled" is a synthetic tab (not a role): it filters to people who hold
+  // at least one cohort enrollment, cutting across every role.
   const roles = await getAllRoles();
   const filter =
-    searchParams.role && roles.some((r) => r.slug === searchParams.role)
-      ? searchParams.role
+    searchParams.role === "enrolled" ||
+    (searchParams.role && roles.some((r) => r.slug === searchParams.role))
+      ? searchParams.role!
       : "all";
+  const enrolledOnly = filter === "enrolled";
   const page = parsePage(searchParams.page);
   const offset = (page - 1) * PAGE_SIZE;
 
@@ -52,15 +56,24 @@ export default async function AdminStudentsPage({
   // Paged rather than a one-shot fetch: the directory grows without bound and
   // every row used to ride the RSC payload into the client list. count:'exact'
   // drives the pager; role filter and search both stay in SQL.
+  // `!inner` turns the enrollment embed into an inner join, so the Enrolled
+  // tab returns only profiles that actually hold an enrollment (and its count
+  // reflects the same). Every other tab keeps the outer join so people with no
+  // enrollment still appear.
+  const enrollmentEmbed = enrolledOnly
+    ? "enrollments!enrollments_user_id_fkey!inner(cohort_id, cohort:cohorts(name))"
+    : "enrollments!enrollments_user_id_fkey(cohort_id, cohort:cohorts(name))";
+
   let q = admin
     .from("profiles")
     .select(
-      "id, email, full_name, role, created_at, applications!applications_user_id_fkey(status), enrollments!enrollments_user_id_fkey(cohort_id, cohort:cohorts(name))",
+      `id, email, full_name, role, created_at, applications!applications_user_id_fkey(status), ${enrollmentEmbed}`,
       { count: "exact" },
     )
     .order("created_at", { ascending: false })
     .range(offset, offset + PAGE_SIZE - 1);
-  if (filter !== "all") q = q.eq("role", filter);
+  // Only actual role slugs filter by role; "all" and "enrolled" do not.
+  if (filter !== "all" && !enrolledOnly) q = q.eq("role", filter);
   // Case-insensitive substring match on either column. `*term*` is PostgREST's
   // wildcard form inside `.or()` (the JS `%` form is only for standalone
   // `.ilike`).
@@ -72,10 +85,19 @@ export default async function AdminStudentsPage({
   const [
     { data: profiles, count: filteredCount },
     { count: allCount },
+    { count: enrolledCount },
     roleCounts,
   ] = await Promise.all([
     q,
     admin.from("profiles").select("id", { count: "exact", head: true }),
+    // Head count of profiles with at least one enrollment (inner join, no rows
+    // transferred) — drives the Enrolled tab's badge.
+    admin
+      .from("profiles")
+      .select("enrollments!enrollments_user_id_fkey!inner(cohort_id)", {
+        count: "exact",
+        head: true,
+      }),
     Promise.all(
       roles.map((r) =>
         admin
@@ -149,13 +171,24 @@ export default async function AdminStudentsPage({
       {/* Role tabs with counts. Each preserves the active search term so
           switching tabs narrows within the current query instead of clearing it. */}
       <div className="mt-4 flex flex-wrap gap-2">
-        {[{ slug: "all", label: "All" }, ...roles].map((f) => {
+        {[
+          { slug: "all", label: "All" },
+          { slug: "enrolled", label: "Enrolled" },
+          ...roles,
+        ].map((f) => {
           const active = filter === f.slug;
-          const count = f.slug === "all" ? allCount ?? 0 : roleCount(f.slug);
+          const count =
+            f.slug === "all"
+              ? allCount ?? 0
+              : f.slug === "enrolled"
+                ? enrolledCount ?? 0
+                : roleCount(f.slug);
           // Hide empty tabs for custom roles so the row doesn't grow a tail of
           // zeroes; the built-ins always show so their absence isn't confusing.
           const isBuiltIn =
-            f.slug === "all" || roles.find((r) => r.slug === f.slug)?.is_system;
+            f.slug === "all" ||
+            f.slug === "enrolled" ||
+            roles.find((r) => r.slug === f.slug)?.is_system;
           if (!isBuiltIn && count === 0 && !active) return null;
           const params = new URLSearchParams();
           if (f.slug !== "all") params.set("role", f.slug);
@@ -181,7 +214,12 @@ export default async function AdminStudentsPage({
         <p className="mt-3 text-xs text-ink-faint">
           {totalCount.toLocaleString()} result{totalCount === 1 ? "" : "s"} for{" "}
           <span className="font-medium text-ink-soft">“{search}”</span>
-          {filter !== "all" ? " in this role" : ""}.
+          {enrolledOnly
+            ? " among enrolled"
+            : filter !== "all"
+              ? " in this role"
+              : ""}
+          .
         </p>
       )}
 
