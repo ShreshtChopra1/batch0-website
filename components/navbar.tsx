@@ -25,9 +25,10 @@ const LINKS = [
  * out of prerendering entirely.
  *
  * So the CTA now points at the constant `/home`, which redirects server-side
- * (app/home/route.ts), and only the *word* on the button is resolved in the
- * browser. The href is correct before hydration; the label catches up a tick
- * later without moving anything (see AuthLabel).
+ * (app/home/route.ts), and only the *word* on the button is auth-dependent.
+ * That word is chosen in CSS from the `data-authed` flag stamped on <html>
+ * before first paint, so the static HTML is correct on the first frame for
+ * both audiences — nothing swaps, nothing shifts (see AuthLabel).
  */
 export default function Navbar({
   cohortLabel = "the next cohort",
@@ -78,13 +79,25 @@ export default function Navbar({
 
         <div className="hidden items-center gap-3 md:flex">
           <ThemeToggle />
-          {!isAuthed && (
-            <Link href="/login" className="text-sm text-ink-soft hover:text-ink">
-              Log in
-            </Link>
-          )}
+          {/* Always rendered; `.when-anon` removes it outright for a
+              signed-in visitor. The decision is made in CSS off the
+              `data-authed` flag <html> carries before first paint, so the
+              link is gone from the first frame rather than unmounting a tick
+              after hydration — nothing shifts, and no dead gap is left
+              behind where it used to be. See lib/auth-flag.ts. */}
+          <Link
+            href="/login"
+            className="when-anon text-sm text-ink-soft hover:text-ink"
+          >
+            Log in
+          </Link>
           <Link
             href={applyHref}
+            // /home is force-dynamic and resolved in middleware — prefetching
+            // it fires the redirect chain for real, on every marketing page
+            // view, and `staleTimes.dynamic = 0` throws the result away
+            // immediately. Same reasoning as components/dashboard/sidebar.tsx.
+            prefetch={false}
             onClick={() => !isAuthed && track("apply_click", { location: "navbar" })}
             className="press rounded-md bg-phosphor px-4 py-2 text-sm font-semibold text-on-phosphor shadow-cta hover:bg-phosphor-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
           >
@@ -139,6 +152,7 @@ export default function Navbar({
             <div className="flex flex-col gap-2 pt-3">
               <Link
                 href={applyHref}
+                prefetch={false}
                 onClick={() => {
                   setOpen(false);
                   if (!isAuthed) track("apply_click", { location: "navbar-mobile" });

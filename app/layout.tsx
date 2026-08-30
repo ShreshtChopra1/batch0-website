@@ -3,6 +3,7 @@ import { VT323, IBM_Plex_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AUTH_FLAG_SCRIPT } from "@/lib/auth-flag";
 import "./globals.css";
 
 // Type system (DESIGN.md): one idea — a terminal. VT323 is the DEC VT320
@@ -139,6 +140,12 @@ export default function RootLayout({
       className={`${display.variable} ${mono.variable}`}
     >
       <body className="bg-paper font-sans text-ink antialiased">
+        {/* Stamps `data-authed` on <html> before anything paints, so the CTA
+            in the navbar can say "Dashboard" — at the width of "Dashboard" —
+            on the very first frame without the page reading cookies on the
+            server and losing its prerender. Same shape as the next-themes
+            script above it. See lib/auth-flag.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: AUTH_FLAG_SCRIPT }} />
         <ThemeProvider>
           <a
             href="#main-content"
@@ -146,7 +153,11 @@ export default function RootLayout({
           >
             Skip to content
           </a>
-          <div id="main-content">{children}</div>
+          {/* #main-content deliberately does NOT live here: this wrapper also
+              contains the navbar, so landing on it skips nothing. Each layout
+              or page owns the target on its real <main> (see the (legal)/
+              admin/mentor/investor layouts and the standalone pages). */}
+          <div>{children}</div>
           <script
             type="application/ld+json"
             // JSON.stringify is safe here — the payload is a fixed literal,

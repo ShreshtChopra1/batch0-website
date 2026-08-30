@@ -1,12 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-
-/**
- * The session cookie @supabase/ssr writes: `sb-<projectRef>-auth-token`, split
- * into `.0` / `.1` when it outgrows the cookie size limit. Its
- * DEFAULT_COOKIE_OPTIONS set `httpOnly: false`, so the document can see it.
- */
-const AUTH_COOKIE = /(?:^|;\s*)sb-[^=;]*-auth-token(?:\.\d+)?=/;
+import { AUTH_COOKIE, AUTH_FLAG_ATTR } from "@/lib/auth-flag";
 
 /**
  * Whether the visitor is signed in, resolved in the browser.
@@ -19,29 +13,35 @@ const AUTH_COOKIE = /(?:^|;\s*)sb-[^=;]*-auth-token(?:\.\d+)?=/;
  * be fast. Nothing in the marketing tree needs a Supabase client; it needs one
  * boolean.
  *
- * Presence, not validity: an expired-but-present cookie reads as signed in.
- * That is safe here because it only chooses a word — the href is the constant
- * /home, which resolves the destination server-side either way.
- *
  * False on the server and on the first client render so SSR and hydration
- * agree; it flips one tick later.
+ * agree; it flips one tick later. Anything that must be *right on the first
+ * painted frame* — a label, a button's width — should key off the
+ * `data-authed` flag in CSS instead (see AuthLabel and lib/auth-flag.ts).
+ * This hook is for behaviour that runs after hydration anyway: analytics,
+ * the mobile menu, the sticky CTA.
  */
 export function useIsAuthed(): boolean {
   const [authed, setAuthed] = useState(false);
   useEffect(() => {
-    setAuthed(AUTH_COOKIE.test(document.cookie));
+    const authed = AUTH_COOKIE.test(document.cookie);
+    setAuthed(authed);
+    // Keep the pre-paint flag honest across soft navigations: the inline
+    // script only runs on a full document load, so a client-side route change
+    // after signing in or out would otherwise leave <html> stale.
+    document.documentElement.toggleAttribute(AUTH_FLAG_ATTR, authed);
   }, []);
   return authed;
 }
 
 /**
- * A CTA label that reads "Dashboard" once we know the visitor is signed in.
+ * A CTA label that reads "Dashboard" once the visitor is signed in.
  *
- * The signed-out label is rendered invisibly underneath at all times, so the
- * element's width is fixed by the *longer* of the two strings and the swap
- * cannot move anything around it. batch0's CLS is a perfect 0 in production
- * and trading that away for one word would be a bad deal — a layout shift is
- * a worse experience than a slightly-late label.
+ * Both strings are in the DOM at all times and CSS shows exactly one, chosen
+ * from the `data-authed` flag stamped on <html> before first paint. So the
+ * markup is identical on the server and the client (no hydration mismatch),
+ * the correct word is there on the first frame, and — unlike the previous
+ * overlay-both-strings-in-a-grid approach — the button is only as wide as the
+ * label it is actually showing. batch0's CLS stays a perfect 0 either way.
  */
 export function AuthLabel({
   signedOut,
@@ -50,15 +50,10 @@ export function AuthLabel({
   signedOut: string;
   signedIn?: string;
 }) {
-  const authed = useIsAuthed();
   return (
-    <span className="inline-grid">
-      <span aria-hidden className="invisible col-start-1 row-start-1">
-        {signedOut}
-      </span>
-      <span className="col-start-1 row-start-1">
-        {authed ? signedIn : signedOut}
-      </span>
-    </span>
+    <>
+      <span className="when-anon">{signedOut}</span>
+      <span className="when-authed">{signedIn}</span>
+    </>
   );
 }
