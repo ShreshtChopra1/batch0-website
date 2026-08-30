@@ -4,8 +4,8 @@
 // An accepted (or already-enrolled) student whose cohort hasn't started yet
 // only gets the personal pages: home, application, billing, referrals,
 // settings, community (Discord) — plus kickoff, resources (pre-cohort
-// section), and team once they've paid to enroll. Everything else under
-// /dashboard is off-limits until kickoff.
+// section), announcements, and team once they've paid to enroll. Everything
+// else under /dashboard is off-limits until kickoff.
 //
 // This module is imported by the Edge middleware, server components, AND
 // client components (sidebar / mobile nav) — keep it dependency-free and
@@ -48,6 +48,12 @@ export const PRE_COHORT_ALLOWED_HREFS = new Set<string>([
   "/dashboard/kickoff",
   "/dashboard/resources",
   "/dashboard/community",
+  // Announcements are how the team reaches a cohort in the weeks BEFORE day
+  // one — the stretch where students have paid, have nothing to do yet, and
+  // most need to hear from us. Locking the page until kickoff meant the one
+  // channel we control was dark for exactly that window, while the sidebar
+  // hid the tab so nobody could tell it existed.
+  "/dashboard/announcements",
   "/dashboard/team",
   "/dashboard/billing",
   "/dashboard/referrals",
@@ -68,6 +74,7 @@ const PRE_COHORT_ALLOWED_PREFIXES = [
   "/dashboard/kickoff",
   "/dashboard/resources",
   "/dashboard/community",
+  "/dashboard/announcements",
   "/dashboard/team",
   "/dashboard/billing",
   "/dashboard/referrals",

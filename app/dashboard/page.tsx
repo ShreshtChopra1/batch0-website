@@ -343,6 +343,7 @@ export default async function DashboardHome() {
             {[
               { href: "/dashboard/application", label: "Application" },
               { href: "/dashboard/kickoff", label: "Kickoff" },
+              { href: "/dashboard/announcements", label: "Announcements" },
               { href: "/dashboard/billing", label: "Billing" },
               { href: "/dashboard/team", label: "Team" },
               { href: "/dashboard/checkin", label: "Check-in" },

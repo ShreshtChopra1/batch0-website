@@ -122,6 +122,12 @@ export const STUDENT_NAV: NavItem[] = STUDENT_NAV_GROUPS.flatMap(
 export const ENROLLED_ONLY_HREFS = new Set<string>([
   "/dashboard/course",
   "/dashboard/team",
+  // Matches the RLS policy exactly (migration 0027): every read path on
+  // `announcements` requires a row in `enrollments`, so an applicant who
+  // isn't enrolled can only ever be shown an empty page. The tab was
+  // visible to them anyway, which read as "the team has said nothing"
+  // rather than "this unlocks when you enroll".
+  "/dashboard/announcements",
   "/dashboard/checkin",
   "/dashboard/office-hours",
   "/dashboard/events",
