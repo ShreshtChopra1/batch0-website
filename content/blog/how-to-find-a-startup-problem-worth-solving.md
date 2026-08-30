@@ -4,7 +4,7 @@ description: "The best startup ideas start with a problem, not a product. How to
 date: "2026-03-10"
 updated: "2026-03-10"
 category: "Validate"
-author: "taran"
+author: "shresht"
 tags: ["startup ideas", "finding a problem", "problem discovery", "teen entrepreneurship", "business ideas"]
 ---
 

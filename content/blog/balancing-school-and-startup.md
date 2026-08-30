@@ -4,7 +4,7 @@ description: "You can run a startup and stay on top of school if you protect you
 date: "2026-05-26"
 updated: "2026-05-26"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["time management", "balance", "burnout", "student founders", "productivity"]
 ---
 

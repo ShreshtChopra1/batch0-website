@@ -4,7 +4,7 @@ description: "The hardest founder skill is saying no to good ideas so you can fi
 date: "2026-02-07"
 updated: "2026-02-07"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["shiny object syndrome", "founder focus", "saying no", "startup discipline", "idea overload", "finishing projects"]
 ---
 

@@ -4,7 +4,7 @@ description: "You can't open a business bank account alone as a minor. How teen 
 date: "2026-02-17"
 updated: "2026-02-17"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["business bank account minor", "teen founder payments", "custodial account", "stripe under 18", "handling startup money", "minor business finances"]
 ---
 

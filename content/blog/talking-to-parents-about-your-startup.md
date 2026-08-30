@@ -4,7 +4,7 @@ description: "Getting your parents on board makes everything easier. How to talk
 date: "2026-07-08"
 updated: "2026-07-08"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["parents", "family", "teen founders", "communication", "support"]
 ---
 
