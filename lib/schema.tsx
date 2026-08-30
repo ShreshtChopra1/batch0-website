@@ -27,7 +27,7 @@ export const SITE = "https://batch0.org";
 export const ORG_ID = `${SITE}/#organization`;
 export const WEBSITE_ID = `${SITE}/#website`;
 export const RISHABH_ID = `${SITE}/#person-rishabh-dagli`;
-export const TARAN_ID = `${SITE}/#person-taran-bethi`;
+export const SHRESHT_ID = `${SITE}/#person-shresht-chopra`;
 
 /**
  * Renders one JSON-LD block.
@@ -76,8 +76,8 @@ export const FOUNDERS = [
   },
   {
     "@type": "Person",
-    "@id": TARAN_ID,
-    name: "Taran Bethi",
+    "@id": SHRESHT_ID,
+    name: "Shresht Chopra",
     jobTitle: "Co-Founder",
     url: `${SITE}/#who-runs-this`,
     worksFor: { "@id": ORG_ID },
