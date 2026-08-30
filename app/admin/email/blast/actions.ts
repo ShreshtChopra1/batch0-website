@@ -7,6 +7,7 @@ import { logAudit } from "@/lib/audit";
 import { sendEmail, sendEmailBatch } from "@/lib/email/send";
 import { Templates } from "@/lib/email/templates";
 import {
+  STATUS_RANK,
   buildEnvelopes,
   firstName,
   joinNames,
@@ -32,6 +33,45 @@ export type BlastSendResult =
       failed: { to: string; reason: string }[];
     }
   | { ok: false; error: string };
+
+export type BlastRecipient = {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+  /** Best (furthest-along) application status, or null if never applied. */
+  appStatus: string | null;
+  /** Names of cohorts the user is enrolled in. */
+  cohorts: string[];
+  /**
+   * Parent / guardian address from their application, if they gave one. The
+   * question is optional (and only asked of under-18s), so plenty of people
+   * won't have one — the form says so rather than silently dropping them.
+   *
+   * Display only: sendBlast re-resolves this server-side from the profile id,
+   * so a tampered request can't redirect a blast to an arbitrary address.
+   */
+  parentEmail: string | null;
+};
+
+/** The audience presets the form offers. Resolved server-side per pick so
+ *  the page never ships the whole directory as props. */
+export type BlastSegment =
+  | "students"
+  | "enrolled"
+  | "accepted"
+  | "waitlisted"
+  | "applied"
+  | "everyone";
+
+const SEGMENTS: BlastSegment[] = [
+  "students",
+  "enrolled",
+  "accepted",
+  "waitlisted",
+  "applied",
+  "everyone",
+];
 
 // Hard ceiling per blast. Well above any realistic cohort size; exists
 // so a bugged "select everyone" click can't turn into a spam cannon.
@@ -67,6 +107,85 @@ function validateDraft(
     body,
     cta: ctaLabel && ctaUrl ? { label: ctaLabel, url: ctaUrl } : null,
   };
+}
+
+/**
+ * Resolve one audience segment to displayable recipient rows.
+ *
+ * Called by the form when the admin picks (or changes) an audience, instead
+ * of the page serializing every profile into client props up front. The rows
+ * are display/selection only — sendBlast re-resolves addresses from the ids.
+ *
+ * Only the "students" segment translates to a SQL filter (role = student).
+ * The rest key off derived values — best application status, has-enrollment —
+ * so they're filtered here after the same mapping the page used to do; the
+ * client still only receives the rows in the segment.
+ */
+export async function getRecipients(
+  segment: BlastSegment,
+): Promise<
+  { ok: true; recipients: BlastRecipient[] } | { ok: false; error: string }
+> {
+  await assertPermission("email.send");
+  if (!SEGMENTS.includes(segment)) {
+    return { ok: false, error: "Unknown audience." };
+  }
+
+  const admin = createAdminClient();
+  let q = admin
+    .from("profiles")
+    .select(
+      "id, email, full_name, role, applications!applications_user_id_fkey(status, parent_email, created_at), enrollments!enrollments_user_id_fkey(cohort:cohorts(name))",
+    )
+    .order("created_at", { ascending: false })
+    .limit(5000);
+  if (segment === "students") q = q.eq("role", "student");
+  const { data: profiles, error } = await q;
+  if (error) return { ok: false, error: error.message };
+
+  const recipients: BlastRecipient[] = (profiles ?? [])
+    .filter((p: any) => p.email)
+    .map((p: any) => {
+      const statuses: string[] = (p.applications ?? []).map(
+        (a: any) => a.status,
+      );
+      const appStatus =
+        statuses.length > 0
+          ? statuses.reduce((best, s) =>
+              (STATUS_RANK[s] ?? -1) > (STATUS_RANK[best] ?? -1) ? s : best,
+            )
+          : null;
+      const cohorts: string[] = (p.enrollments ?? [])
+        .map((e: any) =>
+          Array.isArray(e.cohort) ? e.cohort[0]?.name : e.cohort?.name,
+        )
+        .filter(Boolean);
+      return {
+        id: p.id,
+        email: p.email,
+        name: p.full_name || null,
+        role: p.role,
+        appStatus,
+        cohorts,
+        parentEmail: pickParentEmail(p.applications ?? []),
+      };
+    })
+    .filter((r) => {
+      switch (segment) {
+        case "enrolled":
+          return r.cohorts.length > 0;
+        case "accepted":
+          return r.appStatus === "accepted";
+        case "waitlisted":
+          return r.appStatus === "waitlisted";
+        case "applied":
+          return r.appStatus === "submitted";
+        default:
+          return true;
+      }
+    });
+
+  return { ok: true, recipients };
 }
 
 /** Render the branded HTML for the live preview pane. */

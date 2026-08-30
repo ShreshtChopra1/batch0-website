@@ -7,7 +7,7 @@
 // The canonical author roster. Posts reference an author by key; everything
 // else (display name, role, profile URL) is derived here so bylines and the
 // JSON-LD `author` node can never drift from each other.
-export type AuthorKey = "rishabh" | "taran" | "team";
+export type AuthorKey = "rishabh" | "shresht" | "team";
 
 export const AUTHORS: Record<
   AuthorKey,
@@ -18,8 +18,8 @@ export const AUTHORS: Record<
     role: "Co-founder, batch0",
     url: "https://batch0.org/#who-runs-this",
   },
-  taran: {
-    name: "Taran Bethi",
+  shresht: {
+    name: "Shresht Chopra",
     role: "Co-founder, batch0",
     url: "https://batch0.org/#who-runs-this",
   },
@@ -31,6 +31,21 @@ export const AUTHORS: Record<
 };
 
 export const AUTHOR_KEYS = Object.keys(AUTHORS) as AuthorKey[];
+
+/**
+ * Retired author keys, mapped to the key that replaced them.
+ *
+ * Code and database migrations do not land at the same instant. `assertAuthor`
+ * in lib/blog.ts *throws* on a key it doesn't recognise, so between deploying
+ * the `shresht` rename and running migration 0051 every DB-backed post still
+ * carrying `taran` would take the blog down — and the same window reopens on
+ * any rollback. Aliasing costs one lookup on the miss path and makes the
+ * rename order-independent in both directions, so it is worth keeping around
+ * rather than deleting once the migration lands.
+ */
+export const LEGACY_AUTHOR_KEYS: Record<string, AuthorKey> = {
+  taran: "shresht",
+};
 
 // The four build sprints double as the blog's topical spine, plus two
 // evergreen buckets. Keeping categories fixed (not free-form tags) gives the

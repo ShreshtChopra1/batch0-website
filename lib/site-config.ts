@@ -237,7 +237,7 @@ function derive(
  *
  * The React cache matters because the /dashboard tree resolves this twice in
  * one render — once in the layout for `referralsEnabled`, once in the page —
- * which was eight queries to answer the same question.
+ * and without it each resolution would repeat the same queries.
  */
 const loadPrivateData = cache(() => loadSiteConfigData(createAdminClient()));
 
@@ -316,14 +316,19 @@ function assemble(
 async function loadSiteConfigData(
   admin: ReturnType<typeof createAdminClient>,
 ): Promise<SiteConfigData> {
-  const [settingsRes, pinnedIdRes] = await Promise.all([
+  // One parallel wave. The unfiltered settings scan already carries the
+  // active_cohort_id row, so the pinned id never needs a query of its own,
+  // and the fallback cohort candidate (next upcoming/active by start date)
+  // rides alongside with its enrollment count embedded. Only an admin pin
+  // pointing somewhere other than that candidate costs a second trip.
+  const [settingsRes, fallbackCohortRes] = await Promise.all([
     admin.from("site_settings").select("key, value"),
-    // We fetch the pinned cohort id separately so the cohort row query
-    // can be a single .single() call when it exists.
     admin
-      .from("site_settings")
-      .select("value")
-      .eq("key", "active_cohort_id")
+      .from("cohorts")
+      .select("*, enrollments(count)")
+      .in("status", ["upcoming", "active"])
+      .order("starts_on", { ascending: true, nullsFirst: false })
+      .limit(1)
       .maybeSingle(),
   ]);
 
@@ -364,8 +369,8 @@ async function loadSiteConfigData(
   };
 
   const pinnedId =
-    typeof pinnedIdRes.data?.value === "string"
-      ? (pinnedIdRes.data!.value as string)
+    typeof raw.active_cohort_id === "string"
+      ? (raw.active_cohort_id as string)
       : null;
 
   // Resolve the active cohort: pinned id wins, otherwise the next
@@ -391,37 +396,25 @@ async function loadSiteConfigData(
     };
   }
 
-  let cohort: ActiveCohort | null = null;
-  if (pinnedId) {
+  let cohortRow: any = fallbackCohortRes.data ?? null;
+  if (pinnedId && pinnedId !== cohortRow?.id) {
+    // A pin may point at a cohort of any status (that is the point of
+    // pinning), so the upcoming/active candidate can't stand in for it.
+    // A pin that resolves to nothing falls back to the candidate.
     const { data } = await admin
       .from("cohorts")
-      .select("*")
+      .select("*, enrollments(count)")
       .eq("id", pinnedId)
       .maybeSingle();
-    if (data) cohort = toCohort(data);
+    if (data) cohortRow = data;
   }
-  if (!cohort) {
-    const { data } = await admin
-      .from("cohorts")
-      .select("*")
-      .in("status", ["upcoming", "active"])
-      .order("starts_on", { ascending: true, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
-    if (data) cohort = toCohort(data);
-  }
+  const cohort = cohortRow ? toCohort(cohortRow) : null;
 
-  // Live enrollment count for the resolved active cohort. Cheap
-  // count(*) query — no per-row read. Returns 0 (rather than erroring)
-  // when there's no cohort or the count query fails for any reason.
-  let enrolledCount = 0;
-  if (cohort?.id) {
-    const { count } = await admin
-      .from("enrollments")
-      .select("id", { count: "exact", head: true })
-      .eq("cohort_id", cohort.id);
-    if (typeof count === "number") enrolledCount = count;
-  }
+  // Live enrollment count, read off the embedded count(*) aggregate — no
+  // per-row read. Reads as 0 (rather than erroring) when there's no
+  // cohort or the embed is missing for any reason.
+  const embeddedCount = cohortRow?.enrollments?.[0]?.count;
+  const enrolledCount = typeof embeddedCount === "number" ? embeddedCount : 0;
 
   return { cohort, settings, enrolledCount };
 }

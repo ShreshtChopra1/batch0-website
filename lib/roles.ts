@@ -161,20 +161,25 @@ export async function homeForRole(slug: string | null | undefined): Promise<stri
   return resolveHome(caps, role?.home_path ?? null);
 }
 
-/** How many people hold each role, keyed by slug. */
+/**
+ * How many people hold each role, keyed by slug. Head-only count queries,
+ * one per role in parallel — the roles list is request-cached (getAllRoles),
+ * no profile rows cross the wire, and the numbers stay exact however large
+ * the directory grows.
+ */
 export async function getRoleMemberCounts(): Promise<Record<string, number>> {
+  const roles = await getAllRoles();
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("profiles")
-    .select("role")
-    // Matches the cap used by /admin/students so the two agree.
-    .limit(5000);
-  if (error || !data) return {};
-  const counts: Record<string, number> = {};
-  for (const row of data as { role: string }[]) {
-    counts[row.role] = (counts[row.role] ?? 0) + 1;
-  }
-  return counts;
+  const entries = await Promise.all(
+    roles.map(async ({ slug }) => {
+      const { count, error } = await admin
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", slug);
+      return [slug, error ? 0 : (count ?? 0)] as const;
+    }),
+  );
+  return Object.fromEntries(entries);
 }
 
 /**

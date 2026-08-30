@@ -4,7 +4,7 @@ description: "A landing page has one job: get one clear action. Here's the anato
 date: "2026-04-10"
 updated: "2026-04-10"
 category: "Build"
-author: "taran"
+author: "shresht"
 tags: ["landing page", "conversion", "copywriting", "waitlist", "marketing"]
 ---
 

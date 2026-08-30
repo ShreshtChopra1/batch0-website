@@ -61,8 +61,16 @@ export function AdminSidebar({ caps }: { caps: Capabilities }) {
               View as
             </p>
             <div className="space-y-0.5">
+              {/* prefetch={false}: authed dynamic routes + staleTimes.dynamic=0
+                  makes prefetched payloads throwaway work — see
+                  components/sidebar-nav.tsx. */}
               {viewAs.map((l) => (
-                <Link key={l.href} href={l.href} className={SIDEBAR_ROW}>
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  prefetch={false}
+                  className={SIDEBAR_ROW}
+                >
                   <l.icon className="h-4 w-4" />
                   {l.label}
                 </Link>

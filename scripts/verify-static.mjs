@@ -32,12 +32,23 @@ if (posts.length < 100) {
 }
 
 const MUST_BE_STATIC = [
+  // "/" and "/program" prerender only because regional tuition is a
+  // client-side label swap (components/regional-price.tsx) — reintroducing
+  // a headers()/cookies() read there silently regresses the two
+  // highest-traffic pages back to per-request rendering.
+  "/",
+  "/program",
   "/blog",
   "/sponsors",
   "/challenges",
   "/privacy",
   "/terms",
   "/refund-policy",
+  // The auth funnel prerenders because ?next/?error moved to client-side
+  // reads — adding a searchParams prop or server session read back to either
+  // page flips it to per-request rendering.
+  "/login",
+  "/signup",
 ];
 for (const route of MUST_BE_STATIC) {
   if (!manifest.routes[route]) {

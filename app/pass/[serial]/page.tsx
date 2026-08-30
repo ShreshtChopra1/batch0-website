@@ -96,7 +96,7 @@ export default async function PublicPassPage({
   if (!pass) notFound();
 
   return (
-    <main className="mx-auto max-w-lg px-5 py-16 md:py-24">
+    <main id="main-content" tabIndex={-1} className="mx-auto max-w-lg px-5 py-16 md:py-24">
       <div className="text-center">
         <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.25em] text-phosphor-ink">
           Founder Pass {formatSerial(pass.serial)}

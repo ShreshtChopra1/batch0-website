@@ -35,8 +35,10 @@ export default async function SponsorsPage() {
   const config = await getPublicSiteConfig();
 
   return (
-    <main className="min-h-screen bg-paper">
+    // See app/page.tsx: <main> must not contain the navbar or footer.
+    <div className="min-h-screen bg-paper">
       <Navbar cohortLabel={config.derived.cohortLabel || "the next cohort"} />
+      <main id="main-content" tabIndex={-1}>
 
       {/* Hero */}
       <section className="px-5 pb-14 pt-14 sm:px-6 sm:pt-20 md:pb-20 md:pt-24">
@@ -148,7 +150,8 @@ export default async function SponsorsPage() {
         </div>
       </section>
 
+      </main>
       <Footer config={config} />
-    </main>
+    </div>
   );
 }

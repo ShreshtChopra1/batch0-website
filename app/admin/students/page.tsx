@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/auth";
 import { getAllRoles } from "@/lib/roles";
 import { can, covers } from "@/lib/permissions";
 import { StudentsBulkList } from "./bulk-list";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Role } from "@/lib/types";
 
 export const metadata = { title: "People · Admin" };
@@ -14,10 +15,18 @@ export const metadata = { title: "People · Admin" };
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const PAGE_SIZE = 100;
+
+function parsePage(raw: string | undefined): number {
+  const n = Number(raw ?? "1");
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
+}
+
 export default async function AdminStudentsPage({
   searchParams,
 }: {
-  searchParams: { role?: string };
+  searchParams: { role?: string; page?: string };
 }) {
   const { caps } = await requirePermission("people.view");
   const admin = createAdminClient();
@@ -29,26 +38,56 @@ export default async function AdminStudentsPage({
     searchParams.role && roles.some((r) => r.slug === searchParams.role)
       ? searchParams.role
       : "all";
+  const page = parsePage(searchParams.page);
+  const offset = (page - 1) * PAGE_SIZE;
 
+  // Paged rather than a one-shot 5000-row fetch: the directory grows without
+  // bound and every row used to ride the RSC payload into the client list.
+  // count:'exact' drives the pager; role filtering stays in SQL.
   let q = admin
     .from("profiles")
     .select(
       "id, email, full_name, role, created_at, applications!applications_user_id_fkey(status), enrollments!enrollments_user_id_fkey(cohort_id, cohort:cohorts(name))",
+      { count: "exact" },
     )
     .order("created_at", { ascending: false })
-    // PostgREST defaults to ~1000 rows; bump explicitly so a growing
-    // people directory doesn't silently truncate.
-    .limit(5000);
+    .range(offset, offset + PAGE_SIZE - 1);
   if (filter !== "all") q = q.eq("role", filter);
 
-  const { data: profiles } = await q;
+  // Tab counts are head-only count queries — one per role plus the "all"
+  // total — so no profile rows are transferred just to be counted, and all
+  // of them ride alongside the page query instead of after it.
+  const [
+    { data: profiles, count: filteredCount },
+    { count: allCount },
+    roleCounts,
+  ] = await Promise.all([
+    q,
+    admin.from("profiles").select("id", { count: "exact", head: true }),
+    Promise.all(
+      roles.map((r) =>
+        admin
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("role", r.slug),
+      ),
+    ),
+  ]);
+  const countBySlug = new Map(
+    roles.map((r, i) => [r.slug, roleCounts[i].count ?? 0]),
+  );
+  const roleCount = (slug: string) => countBySlug.get(slug) ?? 0;
 
-  const { data: counts } = await admin
-    .from("profiles")
-    .select("role")
-    .limit(5000);
-  const roleCount = (slug: string) =>
-    (counts ?? []).filter((r: any) => r.role === slug).length;
+  const totalCount = filteredCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  // Role tab links carry no page param, so switching tabs lands on page 1.
+  const pageHref = (p: number) => {
+    const params = new URLSearchParams();
+    if (filter !== "all") params.set("role", filter);
+    if (p > 1) params.set("page", String(p));
+    const qs = params.toString();
+    return qs ? `/admin/students?${qs}` : "/admin/students";
+  };
 
   // Assignable roles are capped by what the viewer holds — the same rule the
   // server action enforces, surfaced early so the picker never offers an
@@ -82,7 +121,7 @@ export default async function AdminStudentsPage({
         </div>
         <a
           href="/api/admin/export/people"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-wash px-3 py-1.5 text-xs font-medium text-ink hover:border-ink/30 hover:bg-wash"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-wash px-3 py-1.5 text-xs font-medium text-ink hover:border-ink/30 hover:bg-ink/[0.04]"
         >
           Export CSV
         </a>
@@ -92,8 +131,7 @@ export default async function AdminStudentsPage({
       <div className="mt-6 flex flex-wrap gap-2">
         {[{ slug: "all", label: "All" }, ...roles].map((f) => {
           const active = filter === f.slug;
-          const count =
-            f.slug === "all" ? counts?.length ?? 0 : roleCount(f.slug);
+          const count = f.slug === "all" ? allCount ?? 0 : roleCount(f.slug);
           // Hide empty tabs for custom roles so the row doesn't grow a tail of
           // zeroes; the built-ins always show so their absence isn't confusing.
           const isBuiltIn =
@@ -141,6 +179,45 @@ export default async function AdminStudentsPage({
           })}
         />
       </Card>
+
+      {/* Pagination */}
+      <div className="mt-4 flex items-center justify-between text-xs text-ink-soft">
+        <span>
+          Page {page} of {totalPages} · showing{" "}
+          {Math.min(offset + 1, totalCount)}–
+          {Math.min(offset + PAGE_SIZE, totalCount)}
+        </span>
+        <div className="flex gap-1">
+          {page > 1 ? (
+            <Link
+              href={pageHref(page - 1)}
+              className="inline-flex items-center gap-1 rounded-md border border-line px-3 py-1.5 hover:bg-wash"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Prev
+            </Link>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-md border border-line px-3 py-1.5 text-ink-faint">
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Prev
+            </span>
+          )}
+          {page < totalPages ? (
+            <Link
+              href={pageHref(page + 1)}
+              className="inline-flex items-center gap-1 rounded-md border border-line px-3 py-1.5 hover:bg-wash"
+            >
+              Next
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-md border border-line px-3 py-1.5 text-ink-faint">
+              Next
+              <ChevronRight className="h-3.5 w-3.5" />
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -123,6 +123,9 @@ const PERKS: Perk[] = [
 
 export default async function PassPage() {
   const supabase = createClient();
+  // Site config depends on nothing per-user, so it starts before the auth
+  // round trip and lands in the same wave as the pass read.
+  const configPromise = getSiteConfig();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -132,8 +135,10 @@ export default async function PassPage() {
   // indistinguishably for "no pass" and "policy blocked it" — reading as admin
   // and filtering by user id keeps that ambiguity out of the UI.
   const admin = createAdminClient();
-  const pass = user ? await getPassForUser(admin, user.id) : null;
-  const config = await getSiteConfig();
+  const [pass, config] = await Promise.all([
+    user ? getPassForUser(admin, user.id) : null,
+    configPromise,
+  ]);
   const earlyAccess = config.settings.founderPassEarlyAccess;
 
   // The ticket prints the holder's name like a boarding pass. profiles has a
@@ -169,7 +174,7 @@ export default async function PassPage() {
   });
 
   return (
-    <main className="mx-auto max-w-lg px-5 py-16 md:py-24">
+    <main id="main-content" tabIndex={-1} className="mx-auto max-w-lg px-5 py-16 md:py-24">
       <div className="text-center">
         <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.25em] text-phosphor-ink">
           Founder Pass

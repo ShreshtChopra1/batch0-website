@@ -103,8 +103,12 @@ export default async function BlogIndexPage() {
   };
 
   return (
-    <main className="min-h-screen bg-paper">
+    // <main> wraps the content only: containing the navbar and footer in it
+    // suppresses their banner/contentinfo landmarks and sends "Skip to
+    // content" above the nav. No layout classes on it, so nothing shifts.
+    <div className="min-h-screen bg-paper">
       <Navbar cohortLabel={cohortLabel} />
+      <main id="main-content" tabIndex={-1}>
 
       <section className="px-5 pb-10 pt-14 sm:px-6 sm:pt-20">
         <div className="mx-auto max-w-[1100px]">
@@ -137,6 +141,7 @@ export default async function BlogIndexPage() {
         </div>
       </section>
 
+      </main>
       <Footer config={config} />
 
       <script
@@ -147,6 +152,6 @@ export default async function BlogIndexPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-    </main>
+    </div>
   );
 }

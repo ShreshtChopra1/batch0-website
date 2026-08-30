@@ -52,7 +52,12 @@ export default function StickyMobileCta({ config }: { config: SiteConfig }) {
         >
           <span className="flex flex-col items-start leading-tight">
             <span>Apply for {cohortLabel}</span>
-            <span className="text-[11px] font-normal text-ink/70">
+            {/* `text-on-phosphor`, never `text-ink`. The phosphor fill is a
+                constant yellow in both themes, but --ink flips to near-white
+                in dark mode — so text-ink/70 here rendered at ~1.35:1 and the
+                risk-reversal line effectively vanished on the highest-intent
+                element on mobile. See the token note in tailwind.config.ts. */}
+            <span className="text-[11px] font-normal text-on-phosphor/70">
               Free to apply · {derived.priceLabel} if accepted
             </span>
           </span>

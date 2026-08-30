@@ -536,7 +536,7 @@ function InboxRow({
   return (
     <Link
       href={href}
-      className="press group flex items-center gap-4 rounded-xl border border-line bg-wash px-5 py-4 hover:border-ink/30 hover:bg-wash"
+      className="press group flex items-center gap-4 rounded-xl border border-line bg-wash px-5 py-4 hover:border-ink/30 hover:bg-ink/[0.04]"
     >
       <Icon className={`h-5 w-5 shrink-0 ${colors[tone]}`} />
       <div className="min-w-0 flex-1">

@@ -12,17 +12,19 @@ export default async function EditFlowPage({
   params: { id: string };
 }) {
   const admin = createAdminClient();
-  const [{ data: flow }, { data: cohorts }] = await Promise.all([
-    admin.from("flows").select("*").eq("id", params.id).maybeSingle(),
-    admin.from("cohorts").select("id, name").order("starts_on"),
-  ]);
+  // Steps filter on the same id the flow row is looked up by, so all three
+  // reads run together — a missing flow just yields zero steps and 404s.
+  const [{ data: flow }, { data: cohorts }, { data: steps }] =
+    await Promise.all([
+      admin.from("flows").select("*").eq("id", params.id).maybeSingle(),
+      admin.from("cohorts").select("id, name").order("starts_on"),
+      admin
+        .from("flow_steps")
+        .select("step_key, title, kind, body, config, sort_order")
+        .eq("flow_id", params.id)
+        .order("sort_order"),
+    ]);
   if (!flow) notFound();
-
-  const { data: steps } = await admin
-    .from("flow_steps")
-    .select("step_key, title, kind, body, config, sort_order")
-    .eq("flow_id", flow.id)
-    .order("sort_order");
 
   return (
     <div className="mx-auto max-w-4xl">

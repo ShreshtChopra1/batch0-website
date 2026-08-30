@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireUser } from "@/lib/auth";
+import { requireUser, getProfile } from "@/lib/auth";
 import { StatusBadge } from "@/components/ui/card";
 import { LocalTime } from "@/components/ui/local-time";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { ReferralCard } from "./referral-card";
 import { FounderPassCard } from "./founder-pass-card";
 import { getPassForUser } from "@/lib/founder-pass";
@@ -28,27 +28,93 @@ import { getSiteConfig } from "@/lib/site-config";
 export default async function DashboardHome() {
   const user = await requireUser();
   const supabase = createClient();
-  const siteConfig = await getSiteConfig();
-  const priceLabel = siteConfig.derived.priceLabel;
+  const adminClient = createAdminClient();
+
+  // One batch for everything that needs only the signed-in user. The profile
+  // comes from the request-cached getProfile() the layout already resolved,
+  // and getStudentAccess (also request-cached, shared with the layout) rides
+  // the same batch chained off the role it needs. The applications and
+  // enrollments reads stay: the page renders the enrollment's cohort dates
+  // and the exact latest application row, which StudentAccess doesn't carry.
+  const profilePromise = getProfile();
+  const siteConfigPromise = getSiteConfig();
+  const accessPromise = profilePromise.then((p) =>
+    getStudentAccess((p?.role as Role) ?? "student"),
+  );
+  const membershipsPromise = adminClient
+    .from("team_members")
+    .select("team_id")
+    .eq("user_id", user.id);
+
+  // Intros and the referral count used to sit in a SECOND `await Promise.all`
+  // below this one — a fifth serial wave paid by every visitor, even though
+  // neither depends on the batch as a whole. Chaining each off only the
+  // promises it genuinely needs lets both overlap the reads above instead of
+  // queueing behind all of them. For the common cases (referrals off or no
+  // code; pre-cohort or team-less student) they now settle without issuing a
+  // query at all.
+  const referralCountPromise = Promise.all([
+    profilePromise,
+    siteConfigPromise,
+  ]).then(([p, cfg]) =>
+    cfg.settings.referralsEnabled && p?.referral_code
+      ? countReferrals(p.referral_code)
+      : 0,
+  );
+  // Active intros for the user's teams. We surface "wired" deals at
+  // the top of the dashboard so the team sees them the moment they
+  // happen. Best-effort: missing migration 0019 or no team → empty.
+  // Intros are a cohort feature — don't surface (or link to) them during
+  // pre-cohort lockdown; the route would just bounce back home anyway.
+  const introsPromise = Promise.all([accessPromise, membershipsPromise]).then(
+    ([acc, { data: rows }]) => {
+      const ids = (rows ?? [])
+        .map((m: any) => m.team_id as string)
+        .filter(Boolean);
+      if (acc.preCohort || ids.length === 0) return [] as any[];
+      return adminClient
+        .from("intro_requests")
+        .select(
+          "id, status, updated_at, investor:profiles!intro_requests_investor_id_fkey(full_name, email), team:teams(name)",
+        )
+        .in("team_id", ids)
+        .order("updated_at", { ascending: false })
+        .then(({ data }) => (data ?? []) as any[]);
+    },
+  );
 
   const [
-    { data: profile },
+    profile,
+    // Pre-cohort lockdown state: accepted/enrolled but the cohort hasn't
+    // started. The whole page reflects it — hero copy, locked rows, and
+    // quick links only point at pages the middleware actually allows.
+    access,
+    siteConfig,
     { data: app },
     { data: enrollment },
     { data: pendingFees },
     { data: certificate },
+    // Null for everyone without a redeemed card, which is most people — the
+    // card block below simply doesn't render for them.
+    founderPass,
+    { data: memberships },
+    intros,
+    referralCount,
   ] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    profilePromise,
+    accessPromise,
+    siteConfigPromise,
+    // Only .status is rendered — the essay columns stay in the database.
     supabase
       .from("applications")
-      .select("*")
+      .select("status")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
     supabase
       .from("enrollments")
-      .select("*, cohort:cohorts(*)")
+      .select("id, cohort:cohorts(name, starts_on, ends_on)")
       .eq("user_id", user.id)
       .maybeSingle(),
     supabase
@@ -65,48 +131,34 @@ export default async function DashboardHome() {
       .order("issued_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    getPassForUser(adminClient, user.id),
+    membershipsPromise,
+    introsPromise,
+    referralCountPromise,
   ]);
-
-  // Pre-cohort lockdown state: accepted/enrolled but the cohort hasn't
-  // started. The whole page reflects it — hero copy, locked rows, and
-  // quick links only point at pages the middleware actually allows.
-  const access = await getStudentAccess((profile?.role as Role) ?? "student");
+  const priceLabel = siteConfig.derived.priceLabel;
   const preCohort = access.preCohort;
   const startDate = fmtDateOnly(access.cohortStartsOn);
 
-  // Active intros for the user's teams. We surface "wired" deals at
-  // the top of the dashboard so the team sees them the moment they
-  // happen. Best-effort: missing migration 0019 or no team → empty.
-  const adminClient = createAdminClient();
+  // Supabase embeds to-one relations as object or single-element array (and
+  // the client types the named embed as an array) — normalize once here.
+  const enrollmentCohort: {
+    name: string | null;
+    starts_on: string | null;
+    ends_on: string | null;
+  } | null = (() => {
+    const c = (enrollment?.cohort ?? null) as any;
+    return Array.isArray(c) ? (c[0] ?? null) : c;
+  })();
 
-  // Null for everyone without a redeemed card, which is most people — the card
-  // block below simply doesn't render for them.
-  const founderPass = await getPassForUser(adminClient, user.id);
-
-  const { data: memberships } = await adminClient
-    .from("team_members")
-    .select("team_id")
-    .eq("user_id", user.id);
   const teamIds = (memberships ?? [])
     .map((m: any) => m.team_id as string)
     .filter(Boolean);
-  let wiredIntros: any[] = [];
-  let liveIntroCount = 0;
-  // Intros are a cohort feature — don't surface (or link to) them during
-  // pre-cohort lockdown; the route would just bounce back home anyway.
-  if (!preCohort && teamIds.length > 0) {
-    const { data: rows } = await adminClient
-      .from("intro_requests")
-      .select(
-        "id, status, updated_at, investor:profiles!intro_requests_investor_id_fkey(full_name, email), team:teams(name)",
-      )
-      .in("team_id", teamIds)
-      .order("updated_at", { ascending: false });
-    wiredIntros = (rows ?? []).filter((r: any) => r.status === "wired");
-    liveIntroCount = (rows ?? []).filter(
-      (r: any) => r.status !== "wired" && r.status !== "passed",
-    ).length;
-  }
+
+  const wiredIntros = intros.filter((r: any) => r.status === "wired");
+  const liveIntroCount = intros.filter(
+    (r: any) => r.status !== "wired" && r.status !== "passed",
+  ).length;
 
   const greeting = profile?.full_name?.split(" ")[0] || "there";
 
@@ -130,12 +182,14 @@ export default async function DashboardHome() {
         </p>
         {status.cta && (
           <div className="mt-6">
-            <Link href={status.cta.href}>
-              <Button>
-                {status.cta.label(priceLabel)}
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
+            {/* ButtonLink, not <Link><Button> — the latter renders
+                <a><button>, which is two tab stops with two different focus
+                rings for one control. This is the dashboard's single primary
+                action, so it is the worst place on the page to have it. */}
+            <ButtonLink href={status.cta.href}>
+              {status.cta.label(priceLabel)}
+              <ArrowRight className="h-4 w-4 shrink-0" />
+            </ButtonLink>
           </div>
         )}
       </div>
@@ -159,7 +213,11 @@ export default async function DashboardHome() {
               >
                 <Handshake className="h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-300" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                  {/* `name` falls back to an email address, which has no
+                      natural break opportunity — min-w-0 alone lets it run
+                      under the arrow and get clipped by the body's
+                      overflow-x: clip at narrow widths. */}
+                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 break-words [overflow-wrap:anywhere]">
                     {name} wired your team{team?.name ? ` (${team.name})` : ""}
                   </p>
                   <p className="mt-0.5 text-xs text-emerald-700 dark:text-emerald-300">
@@ -167,7 +225,10 @@ export default async function DashboardHome() {
                     Open intros for next steps.
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-300 group-hover:text-emerald-700 dark:group-hover:text-emerald-300" />
+                {/* The group-hover values used to repeat the base colour
+                    exactly, so hovering the loudest card on the page moved
+                    nothing. Darken on hover instead, in both themes. */}
+                <ArrowRight className="h-4 w-4 shrink-0 text-emerald-700 group-hover:text-emerald-900 dark:text-emerald-300 dark:group-hover:text-emerald-100" />
               </Link>
             );
           })}
@@ -210,12 +271,12 @@ export default async function DashboardHome() {
               label="Cohort"
               value={
                 enrollment
-                  ? enrollment.cohort?.name ?? "Enrolled"
+                  ? enrollmentCohort?.name ?? "Enrolled"
                   : "Not enrolled yet"
               }
               sub={
                 enrollment
-                  ? `${enrollment.cohort?.starts_on ?? "—"} → ${enrollment.cohort?.ends_on ?? "—"}`
+                  ? `${enrollmentCohort?.starts_on ?? "—"} → ${enrollmentCohort?.ends_on ?? "—"}`
                   : "Apply to claim a seat."
               }
             />
@@ -308,10 +369,13 @@ export default async function DashboardHome() {
               <li key={l.href}>
                 <Link
                   href={l.href}
-                  className="press flex items-center justify-between rounded-md border border-line bg-paper px-3 py-2.5 text-sm text-ink-soft hover:border-ink/30 hover:bg-wash hover:text-ink"
+                  className="press group flex items-center justify-between rounded-md border border-line bg-paper px-3 py-2.5 text-sm text-ink-soft hover:border-ink/30 hover:bg-wash hover:text-ink"
                 >
                   <span>{l.label}</span>
-                  <ArrowRight className="h-3.5 w-3.5 text-ink-faint" />
+                  {/* Was pinned to text-ink-faint, so all seven tiles
+                      brightened their label, border and background on hover
+                      while the arrow alone stayed dead. Matches Row() below. */}
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 text-ink-faint group-hover:text-ink-soft" />
                 </Link>
               </li>
             ))}
@@ -333,7 +397,7 @@ export default async function DashboardHome() {
           <ReferralCard
             code={profile.referral_code}
             siteUrl={env.siteUrl}
-            referralCount={await countReferrals(profile.referral_code)}
+            referralCount={referralCount}
           />
         </div>
       )}
@@ -348,12 +412,10 @@ export default async function DashboardHome() {
               You graduated. Share it on LinkedIn or anywhere.
             </p>
           </div>
-          <Link href={`/verify/${certificate.code}`}>
-            <Button size="sm">
-              View certificate
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </Link>
+          <ButtonLink href={`/verify/${certificate.code}`} size="sm">
+            View certificate
+            <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+          </ButtonLink>
         </div>
       )}
     </div>

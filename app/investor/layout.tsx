@@ -18,7 +18,15 @@ export default async function InvestorLayout({
       <RoleSidebar kind="investor" role={profile.role} caps={caps} />
       <div className="flex flex-1 flex-col">
         <MobileNav kind="investor" role={profile.role} caps={caps} />
-        <main className="flex-1 px-5 py-6 md:px-10 md:py-10">{children}</main>
+        {/* Skip-link target. tabIndex={-1} makes the non-focusable <main>
+            focusable so screen readers actually move the cursor here. */}
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 px-5 py-6 md:px-10 md:py-10"
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

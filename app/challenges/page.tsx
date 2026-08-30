@@ -21,8 +21,12 @@ export default async function ChallengesIndexPage() {
   ]);
 
   return (
-    <main className="min-h-screen bg-paper">
+    // <main> wraps the content only: containing the navbar and footer in it
+    // suppresses their banner/contentinfo landmarks and sends "Skip to
+    // content" above the nav. No layout classes on it, so nothing shifts.
+    <div className="min-h-screen bg-paper">
       <Navbar cohortLabel={config.derived.cohortLabel || "the next cohort"} />
+      <main id="main-content" tabIndex={-1}>
 
       <section className="px-5 pb-8 pt-16 sm:px-6 md:pt-24">
         <div className="mx-auto max-w-[1100px]">
@@ -89,7 +93,8 @@ export default async function ChallengesIndexPage() {
       </section>
 
       <ChallengeWinners winners={winners} />
+      </main>
       <Footer config={config} />
-    </main>
+    </div>
   );
 }

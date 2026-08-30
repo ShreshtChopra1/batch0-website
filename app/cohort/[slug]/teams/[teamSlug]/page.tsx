@@ -56,8 +56,12 @@ export default async function TeamProfile({
   ]);
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-black text-white">
+    // <main> wraps the content only: containing the navbar and footer in it
+    // suppresses their banner/contentinfo landmarks and sends "Skip to
+    // content" above the nav. No layout classes on it, so nothing shifts.
+    <div className="relative min-h-screen overflow-hidden bg-black text-white">
       <Navbar />
+      <main id="main-content" tabIndex={-1}>
       <article className="relative mx-auto max-w-3xl px-6 pt-32 pb-20">
         <Link
           href={`/cohort/${cohort.slug}`}
@@ -154,7 +158,8 @@ export default async function TeamProfile({
           </section>
         )}
       </article>
+      </main>
       <Footer />
-    </main>
+    </div>
   );
 }

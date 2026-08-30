@@ -11,3 +11,7 @@
 # the directory would make every Vercel build die on a missing module. The
 # whole directory is 144 KB; the upload savings this was buying were noise
 # next to /docs.
+
+# 9.7MB of graphify knowledge-graph output. Not gitignored historically, so
+# it would otherwise be uploaded on every `vercel --prod` from a working copy.
+/graphify-out

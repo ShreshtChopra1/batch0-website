@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea, Label } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Send, FlaskConical, Users, CheckCheck, X } from "lucide-react";
-import type { BlastRecipient } from "./page";
 import {
+  getRecipients,
   renderBlastPreview,
   sendTestBlast,
   sendBlast,
   type BlastDraft,
+  type BlastRecipient,
   type BlastSendResult,
 } from "./actions";
 import {
@@ -92,10 +93,10 @@ function templates(siteUrl: string) {
 }
 
 export function BlastForm({
-  recipients,
+  cohortNames,
   siteUrl,
 }: {
-  recipients: BlastRecipient[];
+  cohortNames: string[];
   siteUrl: string;
 }) {
   // ---- recipient selection ----
@@ -105,21 +106,41 @@ export function BlastForm({
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const cohortNames = useMemo(
-    () =>
-      Array.from(new Set(recipients.flatMap((r) => r.cohorts))).sort(),
-    [recipients],
-  );
+  // Rows for the active audience, fetched from the server when the pill
+  // changes — the page doesn't ship the directory. Cohort + search stay
+  // client-side filters within the loaded segment, exactly as before.
+  const [recipients, setRecipients] = useState<BlastRecipient[]>([]);
+  const [loadingRecipients, setLoadingRecipients] = useState(true);
+  const [recipientsError, setRecipientsError] = useState<string | null>(null);
+  // Every row ever fetched, kept across audience switches so a selection
+  // made under one filter still counts (and dedupes) after moving to
+  // another — you can pick 3 accepted, flip to waitlisted, add 2 more.
+  const loadedById = useRef(new Map<string, BlastRecipient>());
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingRecipients(true);
+    setRecipientsError(null);
+    setRecipients([]);
+    getRecipients(audience).then((res) => {
+      if (cancelled) return;
+      if (res.ok) {
+        for (const r of res.recipients) loadedById.current.set(r.id, r);
+        setRecipients(res.recipients);
+      } else {
+        setRecipientsError(res.error);
+      }
+      setLoadingRecipients(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [audience]);
 
   /** Everyone matching the filter pills, before the parent-address rule. */
   const matching = useMemo(() => {
     const q = search.trim().toLowerCase();
     return recipients.filter((r) => {
-      if (audience === "students" && r.role !== "student") return false;
-      if (audience === "enrolled" && r.cohorts.length === 0) return false;
-      if (audience === "accepted" && r.appStatus !== "accepted") return false;
-      if (audience === "waitlisted" && r.appStatus !== "waitlisted") return false;
-      if (audience === "applied" && r.appStatus !== "submitted") return false;
       if (cohort && !r.cohorts.includes(cohort)) return false;
       if (
         q &&
@@ -130,7 +151,7 @@ export function BlastForm({
         return false;
       return true;
     });
-  }, [recipients, audience, cohort, search]);
+  }, [recipients, cohort, search]);
 
   // Parents-only can't reach someone who never gave a parent address, so they
   // drop out of the list — and get counted, because a filter that silently
@@ -146,10 +167,15 @@ export function BlastForm({
 
   // Unique addresses the current selection resolves to — mirrors the dedupe
   // in buildEnvelopes() so the button never promises a number the send can't
-  // match. Siblings sharing one parent address count once.
+  // match. Siblings sharing one parent address count once. Reads the loaded
+  // cache, not the active segment, because a selection can span audiences.
   const selectedPeople = useMemo(
-    () => recipients.filter((r) => selected.has(r.id)),
-    [recipients, selected],
+    () =>
+      Array.from(selected)
+        .map((id) => loadedById.current.get(id))
+        .filter((r): r is BlastRecipient => !!r),
+    // recipients is a dep so the memo re-runs once a fetch lands in the cache.
+    [selected, recipients],
   );
   const addressCount = useMemo(
     () =>
@@ -354,7 +380,7 @@ export function BlastForm({
           <button
             type="button"
             onClick={selectFiltered}
-            className="inline-flex items-center gap-1 rounded-md border border-line bg-wash px-2.5 py-1 font-medium text-ink-soft hover:border-ink/30 hover:bg-wash"
+            className="inline-flex items-center gap-1 rounded-md border border-line bg-wash px-2.5 py-1 font-medium text-ink-soft hover:border-ink/30 hover:bg-ink/[0.04]"
           >
             <CheckCheck className="h-3.5 w-3.5" />
             Select all {filtered.length} shown
@@ -363,7 +389,7 @@ export function BlastForm({
             <button
               type="button"
               onClick={() => setSelected(new Set())}
-              className="inline-flex items-center gap-1 rounded-md border border-line bg-wash px-2.5 py-1 font-medium text-ink-soft hover:border-ink/30 hover:bg-wash"
+              className="inline-flex items-center gap-1 rounded-md border border-line bg-wash px-2.5 py-1 font-medium text-ink-soft hover:border-ink/30 hover:bg-ink/[0.04]"
             >
               <X className="h-3.5 w-3.5" />
               Clear
@@ -381,7 +407,15 @@ export function BlastForm({
         )}
 
         <ul className="mt-3 max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line">
-          {filtered.length === 0 && (
+          {loadingRecipients && (
+            <li className="p-4 text-sm text-ink-faint">Loading recipients…</li>
+          )}
+          {!loadingRecipients && recipientsError && (
+            <li className="p-4 text-sm text-red-700 dark:text-red-300">
+              {recipientsError}
+            </li>
+          )}
+          {!loadingRecipients && !recipientsError && filtered.length === 0 && (
             <li className="p-4 text-sm text-ink-faint">
               {sendTo === "parents"
                 ? "Nobody matching this filter has a parent email on file."

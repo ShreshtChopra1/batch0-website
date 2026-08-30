@@ -32,14 +32,10 @@ export default async function AdminStudentDetail({
   // Assignable roles are capped by what the viewer holds, mirroring the
   // server action; a viewer without `people.roles` gets a read-only badge.
   const canChangeRoles = can(caps, "people.roles");
-  const allRoles = await getAllRoles();
-  const roleOptions = allRoles
-    .filter((r) => covers(caps, r.permissions))
-    .map((r) => ({ slug: r.slug, label: r.label, color: r.color }));
-  const siteConfig = await getSiteConfig();
-  const referralsEnabled = siteConfig.settings.referralsEnabled;
 
   const [
+    allRoles,
+    siteConfig,
     { data: profile },
     { data: applications },
     { data: enrollments },
@@ -47,6 +43,8 @@ export default async function AdminStudentDetail({
     { data: cohorts },
     { data: charges },
   ] = await Promise.all([
+    getAllRoles(),
+    getSiteConfig(),
     admin
       .from("profiles")
       .select("*")
@@ -74,6 +72,11 @@ export default async function AdminStudentDetail({
       .eq("user_id", params.id)
       .order("created_at", { ascending: false }),
   ]);
+
+  const roleOptions = allRoles
+    .filter((r) => covers(caps, r.permissions))
+    .map((r) => ({ slug: r.slug, label: r.label, color: r.color }));
+  const referralsEnabled = siteConfig.settings.referralsEnabled;
 
   if (!profile) notFound();
 

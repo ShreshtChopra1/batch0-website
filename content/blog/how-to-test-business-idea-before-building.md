@@ -4,7 +4,7 @@ description: "You can test a business idea in a weekend without building the pro
 date: "2026-03-27"
 updated: "2026-03-27"
 category: "Validate"
-author: "taran"
+author: "shresht"
 tags: ["test business idea", "idea validation", "smoke test", "landing page test", "pre-selling"]
 ---
 

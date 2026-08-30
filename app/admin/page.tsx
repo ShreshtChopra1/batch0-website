@@ -61,12 +61,22 @@ export default async function AdminOverview() {
     seePeople
       ? admin.from("enrollments").select("id", { count: "exact", head: true })
       : { count: null },
+    // Revenue tiles sum amount columns row-by-row, capped explicitly — past
+    // ~10k rows the totals need to move to a SQL aggregate RPC instead.
     seeRevenue
-      ? admin.from("payments").select("amount_cents,status").eq("status", "succeeded")
+      ? admin
+          .from("payments")
+          .select("amount_cents")
+          .eq("status", "succeeded")
+          .limit(10000)
       : { data: null },
     // Paid fees/fines count toward revenue too; refunded rows don't.
     seeRevenue
-      ? admin.from("user_charges").select("amount_cents,status").eq("status", "paid")
+      ? admin
+          .from("user_charges")
+          .select("amount_cents")
+          .eq("status", "paid")
+          .limit(10000)
       : { data: null },
     seeApplications
       ? admin

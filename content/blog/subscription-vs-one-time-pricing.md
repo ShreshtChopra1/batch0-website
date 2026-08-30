@@ -4,7 +4,7 @@ description: "Recurring revenue sounds great, but it's not right for every produ
 date: "2026-02-22"
 updated: "2026-02-22"
 category: "Build"
-author: "taran"
+author: "shresht"
 tags: ["subscription pricing", "one-time pricing", "pricing model", "recurring revenue", "monetization"]
 ---
 

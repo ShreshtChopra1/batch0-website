@@ -1,10 +1,19 @@
 import Link from "next/link";
+// Aliased because this module also exports the `dynamic` route-segment config.
+import nextDynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getChallengeBySlug, isChallengeOpen, formatCents } from "@/lib/challenges";
 import { LocalTime } from "@/components/ui/local-time";
-import { ChallengeForm } from "./challenge-form";
+
+// The entry form (and the supabase-js it pulls in for video uploads) only
+// renders for a signed-in visitor with no existing submission. next/dynamic
+// splits it into its own chunk, so the logged-out top-of-funnel majority —
+// who get SignInPanel instead — never downloads it.
+const ChallengeForm = nextDynamic(() =>
+  import("./challenge-form").then((m) => m.ChallengeForm),
+);
 
 export const metadata = {
   title: "Weekly Challenge · batch0",
@@ -25,9 +34,12 @@ export default async function ChallengePage({
   // The challenge itself is public — this is a top-of-funnel page, so a
   // logged-out visitor must be able to read the whole thing. Only the
   // entry form needs an account; they get a sign-in CTA in its place.
-  const user = await getUser();
-
-  const challenge = await getChallengeBySlug(params.slug);
+  // The two lookups are independent (session cookie vs. challenge row),
+  // so they run concurrently.
+  const [user, challenge] = await Promise.all([
+    getUser(),
+    getChallengeBySlug(params.slug),
+  ]);
   if (!challenge) notFound();
 
   let existing: { id: string; status: string } | null = null;
@@ -45,7 +57,10 @@ export default async function ChallengePage({
   const open = isChallengeOpen(challenge);
 
   return (
-    <div className="min-h-screen bg-paper">
+    // Skip-link target for this route (no layout above it owns a <main>).
+    // Same element and classes as before, promoted from <div>; tabIndex={-1}
+    // makes it focusable so screen readers move the cursor here.
+    <main id="main-content" tabIndex={-1} className="min-h-screen bg-paper">
       <div className="relative mx-auto max-w-3xl px-5 sm:px-6 py-10 sm:py-16">
         <Link href="/challenges" className="text-sm text-ink-soft hover:text-ink">
           ← All challenges
@@ -100,7 +115,7 @@ export default async function ChallengePage({
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 

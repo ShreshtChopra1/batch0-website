@@ -4,7 +4,7 @@ description: "The right mentor can save a young founder months of mistakes. Here
 date: "2026-02-15"
 updated: "2026-02-15"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["startup mentor", "finding a mentor", "cold email mentor", "high school founder", "advisor for teens", "mentorship"]
 ---
 

@@ -4,7 +4,7 @@ description: "A fair co-founder equity split matters even for a teen startup. He
 date: "2026-02-05"
 updated: "2026-02-05"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["cofounder equity split", "vesting", "high school startup", "founder agreement", "equity for teens", "cofounder ownership"]
 ---
 

@@ -24,16 +24,11 @@ export default async function InvestorTeamDetailPage({
   const profile = await requireInvestor();
   const admin = createAdminClient();
 
-  const { data: team } = await admin
-    .from("teams")
-    .select(
-      "id, name, tagline, description, logo_url, logo_status, website_url, raised_cents, post_money_cents, lead_investor, round_kind, round_closed_on, tear_sheet, tear_sheet_generated_at, cohort_id, cohort:cohorts(name)",
-    )
-    .eq("id", params.id)
-    .maybeSingle();
-  if (!team) notFound();
-
+  // Every query here keys off params.id / profile.id, not the team row, so
+  // the team fetch rides the same wave; the not-found check happens after
+  // the batch settles.
   const [
+    { data: team },
     { data: members },
     { data: messages },
     { data: pitch },
@@ -44,6 +39,13 @@ export default async function InvestorTeamDetailPage({
     { data: rxnRows },
     passHolders,
   ] = await Promise.all([
+    admin
+      .from("teams")
+      .select(
+        "id, name, tagline, description, logo_url, logo_status, website_url, raised_cents, post_money_cents, lead_investor, round_kind, round_closed_on, tear_sheet, tear_sheet_generated_at, cohort_id, cohort:cohorts(name)",
+      )
+      .eq("id", params.id)
+      .maybeSingle(),
     admin
       .from("team_members")
       .select("user_id, role, profile:profiles(full_name)")
@@ -88,6 +90,7 @@ export default async function InvestorTeamDetailPage({
       .eq("team_id", params.id),
     passHolderUserIds(admin),
   ]);
+  if (!team) notFound();
 
   // Cohort-scoped rubric: criteria with cohort_id null apply to all.
   const teamCohortId = (team as any).cohort_id ?? null;

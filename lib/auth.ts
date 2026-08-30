@@ -2,7 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { capabilitiesForRole, getRole } from "@/lib/roles";
+import { capabilitiesForRole, getAllRoles, getRole } from "@/lib/roles";
 import {
   can,
   canAccessAdmin,
@@ -28,11 +28,59 @@ export async function roleHome(role: Role): Promise<string> {
   return resolveHome(caps, row?.home_path ?? null);
 }
 
-/** Request-cached: every guard below calls it, and it's a network hop. */
+/**
+ * The signed-in user, request-cached — every guard below calls it, and it sits
+ * at the head of the render's dependency chain, so nothing else starts until
+ * it resolves.
+ *
+ * getClaims() rather than getUser(): the project's Supabase signs JWTs with an
+ * asymmetric ES256 key, so the token is verified locally with WebCrypto
+ * against a cached JWKS instead of costing a GoTrue round trip (measured
+ * 176-209ms) on every render.
+ *
+ * This is NOT the same guarantee as getUser(), and the difference matters.
+ * Both verify the signature — unlike getSession(), which trusts the cookie
+ * blindly — but getUser() additionally proves the user and session still
+ * exist. Here, revocation is only eventual: a deleted or globally-signed-out
+ * account keeps passing this check until its token's `exp`, up to an hour.
+ *
+ * That is an acceptable trade for READS, which is all this powers — it decides
+ * which page you may look at, and the pages re-read the database anyway.
+ * Mutations must not rely on it: lib/server-guards.ts deliberately keeps a
+ * real getUser() round trip so "delete this account" takes effect instantly.
+ *
+ * Returns the subset of `User` this codebase actually reads. Every consumer
+ * was checked: only `.id`, `.email` and `.user_metadata.full_name` are ever
+ * touched, and all three are present in a Supabase access token. `email` and
+ * `user_metadata` matter beyond convenience — getProfile()'s self-heal below
+ * writes both into a newly created `profiles` row, so dropping them would
+ * silently persist blanks for a first-time user.
+ */
 export const getUser = cache(async function getUser() {
   const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  return user;
+  let claims;
+  try {
+    // Same defence as lib/supabase/middleware.ts: @supabase/ssr base64url-
+    // decodes the cookie before any auth logic runs, so a corrupt or truncated
+    // value throws instead of returning an error. Middleware does not always
+    // clear it for us either — on a route that is neither protected nor an
+    // auth path (e.g. /challenges/[slug], which is force-dynamic and reads the
+    // session), middleware passes the request through untouched and this call
+    // is the first thing to touch the bad cookie. Uncaught, that is a
+    // permanent 500 on that route for that visitor.
+    const { data, error } = await supabase.auth.getClaims();
+    if (error) return null;
+    claims = data?.claims;
+  } catch (err) {
+    console.error("[auth] could not read the session cookie:", err);
+    return null;
+  }
+  if (!claims?.sub) return null;
+  return {
+    id: claims.sub as string,
+    email: claims.email as string | undefined,
+    user_metadata: (claims.user_metadata ?? {}) as Record<string, unknown>,
+  };
 });
 
 export async function requireUser() {
@@ -46,15 +94,16 @@ export async function requireUser() {
  *
  * Request-cached, like getViewer() below. Without it a single render pays for
  * this twice or more: the layout resolves a profile, then the page calls
- * getProfile() again, and each call is an auth.getUser() network round trip to
- * Supabase plus a profiles select — four serial hops to answer a question that
- * cannot change inside one request.
+ * getProfile() again, and each call is a profiles select — serial hops to
+ * answer a question that cannot change inside one request. The auth check
+ * itself rides the request-cached getUser() above, so however many helpers
+ * ask, one render costs one GoTrue round trip.
  */
 export const getProfile = cache(async function getProfile(): Promise<Profile | null> {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getUser();
   if (!user) return null;
 
+  const supabase = createClient();
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
@@ -125,6 +174,12 @@ export type Viewer = {
  * share one resolution — and can never disagree about what the viewer can do.
  */
 export const getViewer = cache(async function getViewer(): Promise<Viewer | null> {
+  // The roles list doesn't depend on who's asking. Kick the request-cached
+  // read off here so capabilitiesForRole() below joins an in-flight promise
+  // instead of adding a serial round trip after the profile resolves. The
+  // muted catch only keeps an early signed-out return from orphaning a
+  // rejection — the await inside capabilitiesForRole() still surfaces errors.
+  void getAllRoles().catch(() => {});
   const profile = await getProfile();
   if (!profile) return null;
   return { profile, caps: await capabilitiesForRole(profile.role) };

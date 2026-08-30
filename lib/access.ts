@@ -1,6 +1,10 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+// Safe to import: lib/auth never imports this module, so no cycle. The shared
+// getUser() keeps the whole request at one auth round trip however many
+// access helpers run.
+import { getUser } from "@/lib/auth";
 import { capabilitiesForRole } from "@/lib/roles";
 import { can, canAccessAdmin } from "@/lib/permissions";
 import type { Role, ApplicationStatus } from "@/lib/types";
@@ -30,11 +34,9 @@ async function isStaffPreview(role?: Role | null): Promise<boolean> {
  */
 export async function isEnrolled(role?: Role | null): Promise<boolean> {
   if (await isStaffPreview(role)) return true;
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getUser();
   if (!user) return false;
+  const supabase = createClient();
   const { data } = await supabase
     .from("enrollments")
     .select("id")
@@ -105,6 +107,45 @@ function embeddedCohort(c: unknown): NamedCohort | null {
 }
 
 /**
+ * The two user-keyed reads behind getStudentAccess, on their own.
+ *
+ * Split out because they depend only on the signed-in user, never on `role` —
+ * while getStudentAccess as a whole cannot start until the caller has resolved
+ * a role, which in the dashboard layout means waiting on getViewer() first.
+ * That ordering made these queries a third serial wave in a render that has
+ * nothing to show until it finishes: `loading.tsx` lives inside the layout's
+ * boundary, so the user watches a blank frame for the duration.
+ *
+ * Exported so the layout can start it in the same parallel batch as
+ * getViewer(). By the time getStudentAccess() runs, this is already resolved
+ * and returns from cache.
+ *
+ * The zero arity is load-bearing. React's cache() keys on arguments, so adding
+ * a parameter here would make the layout's speculative call and
+ * getStudentAccess's call two different entries — two round trips instead of
+ * none.
+ */
+export const loadAccessRows = cache(async function loadAccessRows() {
+  const user = await getUser();
+  if (!user) return null;
+  const admin = createAdminClient();
+  const [{ data: enrollments }, { data: app }] = await Promise.all([
+    admin
+      .from("enrollments")
+      .select("cohort_id, cohort:cohorts(name, starts_on, status)")
+      .eq("user_id", user.id),
+    admin
+      .from("applications")
+      .select("status, cohort_id, cohort:cohorts(name, starts_on, status)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  return { enrollments, app };
+});
+
+/**
  * Request-cached (React cache): the dashboard layout and the rendered
  * page both call this for the same role in one request and share a
  * single resolution — no duplicate queries, no layout/page disagreement.
@@ -122,11 +163,8 @@ export const getStudentAccess = cache(async function getStudentAccess(
       ...NO_PRE_COHORT,
     };
   }
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const rows = await loadAccessRows();
+  if (!rows) {
     return {
       enrolled: false,
       applicationStatus: null,
@@ -136,20 +174,7 @@ export const getStudentAccess = cache(async function getStudentAccess(
       ...NO_PRE_COHORT,
     };
   }
-  const admin = createAdminClient();
-  const [{ data: enrollments }, { data: app }] = await Promise.all([
-    admin
-      .from("enrollments")
-      .select("cohort_id, cohort:cohorts(name, starts_on, status)")
-      .eq("user_id", user.id),
-    admin
-      .from("applications")
-      .select("status, cohort_id, cohort:cohorts(name, starts_on, status)")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  const { enrollments, app } = rows;
   const enrolled = (enrollments?.length ?? 0) > 0;
   const applicationStatus = (app?.status as ApplicationStatus) ?? null;
   const accepted = isAcceptedStatus(applicationStatus);

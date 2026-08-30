@@ -4,7 +4,7 @@ description: "Co-founder breakups are brutal, especially in high school. Here's 
 date: "2026-02-19"
 updated: "2026-02-19"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["cofounder breakup", "leaving a cofounder", "cofounder conflict", "founder divorce", "cofounder disagreement", "startup partnership ends"]
 ---
 

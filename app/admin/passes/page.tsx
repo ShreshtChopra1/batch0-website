@@ -11,6 +11,12 @@ export const revalidate = 0;
 export default async function AdminPassesPage() {
   const admin = createAdminClient();
 
+  // Independent of the row/holder reads below, so it runs alongside them.
+  // Kept as the shared helper (not derived from the rows fetched here): its
+  // order-desc/limit-1 max is immune to PostgREST's row cap, so it stays the
+  // one source of truth the CLI also uses.
+  const nextPromise = nextBatchDefaults(admin);
+
   const { data } = await admin
     .from("founder_passes")
     .select("serial, batch, redeemed_by, redeemed_at, revoked_at, note")
@@ -69,7 +75,7 @@ export default async function AdminPassesPage() {
     }, new Map<string, BatchSummary>()),
   ).map(([, v]) => v);
 
-  const next = await nextBatchDefaults(admin);
+  const next = await nextPromise;
 
   // Whether THIS environment can mint. On Vercel that means the Onshape keys
   // are present; locally it means .env.local has them. Checked server-side so

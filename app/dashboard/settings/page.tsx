@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireUser, getProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isDiscordEnabled } from "@/lib/discord";
 import { SettingsForm } from "./settings-form";
@@ -27,15 +27,16 @@ export default async function SettingsPage({
 }) {
   const user = await requireUser();
   const supabase = createClient();
-  const [{ data: profile }, { data: settingRows }, discordEnabled] =
-    await Promise.all([
-      supabase.from("profiles").select("*").eq("id", user.id).single(),
-      supabase
-        .from("site_settings")
-        .select("key, value")
-        .in("key", ["discord_url"]),
-      isDiscordEnabled(),
-    ]);
+  // Profile comes from the request-cached getProfile() the layout already
+  // resolved — it carries every column this page reads.
+  const [profile, { data: settingRows }, discordEnabled] = await Promise.all([
+    getProfile(),
+    supabase
+      .from("site_settings")
+      .select("key, value")
+      .in("key", ["discord_url"]),
+    isDiscordEnabled(),
+  ]);
 
   const theme: Theme = profile?.theme === "light" ? "light" : "dark";
   const discordInvite =

@@ -16,6 +16,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   AUTHORS,
   CATEGORIES,
+  LEGACY_AUTHOR_KEYS,
   type AuthorKey,
   type Category,
   type PostMeta,
@@ -65,6 +66,10 @@ function assertCategory(value: string, slug: string): Category {
 
 function assertAuthor(value: string, slug: string): AuthorKey {
   if (value in AUTHORS) return value as AuthorKey;
+  // A key that was renamed rather than removed — resolve it instead of
+  // throwing, so a post written under the old key keeps rendering.
+  const aliased = LEGACY_AUTHOR_KEYS[value];
+  if (aliased) return aliased;
   throw new Error(
     `Blog post "${slug}" has unknown author "${value}". Allowed: ${Object.keys(AUTHORS).join(", ")}`,
   );

@@ -90,7 +90,10 @@ export default async function ApplyPage({
     (await canBypassClosedApplications(createAdminClient(), user.id));
   if (!applicationsOpen) {
     return (
-      <div className="min-h-screen bg-paper">
+      // The page's own root doubles as the skip-link target — same element,
+      // same classes, just promoted from <div> to <main> so "Skip to content"
+      // has somewhere to land. tabIndex={-1} makes it focusable.
+      <main id="main-content" tabIndex={-1} className="min-h-screen bg-paper">
         <div className="relative mx-auto max-w-2xl px-5 sm:px-6 py-24">
           <Link
             href="/dashboard"
@@ -108,7 +111,7 @@ export default async function ApplyPage({
             </p>
           </div>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -140,7 +143,8 @@ export default async function ApplyPage({
   const hasMultiple = cohorts.length > 1;
 
   return (
-    <div className="min-h-screen bg-paper">
+    // Skip-link target (see the closed-applications branch above).
+    <main id="main-content" tabIndex={-1} className="min-h-screen bg-paper">
       <div className="relative mx-auto max-w-3xl px-5 sm:px-6 py-10 sm:py-16">
         <div className="mb-6 sm:mb-8 flex items-center justify-between">
           <Link href="/dashboard" className="text-sm text-ink-soft hover:text-ink">
@@ -250,6 +254,6 @@ export default async function ApplyPage({
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

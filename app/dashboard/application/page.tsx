@@ -1,11 +1,10 @@
-import Link from "next/link";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, getProfile } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
 import { Card, StatusBadge } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { getCountryFromHeaders, getRegionalPrice } from "@/lib/pricing";
 import {
   hasFounderPass,
@@ -74,9 +73,9 @@ export default async function ApplicationPage({
       <div className="mx-auto max-w-3xl">
         <h1 className="text-3xl font-bold tracking-tight">Application</h1>
         <p className="mt-2 text-ink-soft">You haven't started an application yet.</p>
-        <Link href="/apply" className="mt-5 inline-block">
-          <Button>Start application</Button>
-        </Link>
+        <ButtonLink href="/apply" className="mt-5">
+          Start application
+        </ButtonLink>
       </div>
     );
   }
@@ -209,14 +208,12 @@ export default async function ApplicationPage({
                 } kicks off${startLabel ? ` on ${startLabel}` : " soon"}.`}
           </p>
           {app.review_notes && <ReviewerNote text={app.review_notes} />}
-          <Link
+          <ButtonLink
             href={started ? "/dashboard/course" : "/dashboard/resources"}
-            className="mt-4 inline-block"
+            className="mt-4"
           >
-            <Button>
-              {started ? "Open course" : "Browse pre-cohort resources"}
-            </Button>
-          </Link>
+            {started ? "Open course" : "Browse pre-cohort resources"}
+          </ButtonLink>
         </Card>
       )}
 
@@ -262,9 +259,9 @@ export default async function ApplicationPage({
           <Row label="Experience" value={app.experience} multiline />
         </div>
         {app.status === "draft" && (
-          <Link href="/apply" className="mt-5 inline-block">
-            <Button variant="secondary" size="sm">Continue editing</Button>
-          </Link>
+          <ButtonLink href="/apply" className="mt-5" variant="secondary" size="sm">
+            Continue editing
+          </ButtonLink>
         )}
       </Card>
     </div>

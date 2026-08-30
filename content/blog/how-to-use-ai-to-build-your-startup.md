@@ -4,7 +4,7 @@ description: "AI can write code, copy, and designs for you. Here's how a high sc
 date: "2026-02-20"
 updated: "2026-02-20"
 category: "Build"
-author: "taran"
+author: "shresht"
 tags: ["ai tools", "build with ai", "ai for founders", "chatgpt for startups", "ai coding"]
 ---
 

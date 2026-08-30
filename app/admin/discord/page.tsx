@@ -14,6 +14,7 @@ import {
   SLASH_COMMANDS,
 } from "@/lib/discord";
 import { env } from "@/lib/env";
+import { runDiscordDoctor, type Check } from "@/lib/discord-doctor";
 import type { DiscordConfigInput } from "./actions";
 import type { Role } from "@/lib/types";
 
@@ -42,21 +43,34 @@ const KEYS_TO_FIELD = {
 export default async function AdminDiscordPage() {
   const admin = createAdminClient();
   const user = await requireUser();
-  const [{ data: rows }, enabled, registered, memberCount, { data: meRow }] =
-    await Promise.all([
-      admin
-        .from("site_settings")
-        .select("key, value")
-        .in("key", Object.keys(KEYS_TO_FIELD)),
-      isDiscordEnabled(),
-      listRegisteredCommands(),
-      fetchGuildMemberCount(),
-      admin
-        .from("profiles")
-        .select("discord_user_id, discord_username, discord_linked_at")
-        .eq("id", user.id)
-        .maybeSingle(),
-    ]);
+  const [
+    { data: rows },
+    enabled,
+    registered,
+    memberCount,
+    { data: meRow },
+    doctor,
+  ] = await Promise.all([
+    admin
+      .from("site_settings")
+      .select("key, value")
+      .in("key", Object.keys(KEYS_TO_FIELD)),
+    isDiscordEnabled(),
+    listRegisteredCommands(),
+    fetchGuildMemberCount(),
+    admin
+      .from("profiles")
+      .select("discord_user_id, discord_username, discord_linked_at")
+      .eq("id", user.id)
+      .maybeSingle(),
+    // Live end-to-end check. Read-only, so it is safe to run on every page
+    // load; it is the only thing here that proves the integration actually
+    // works rather than merely being configured.
+    runDiscordDoctor().catch((err) => {
+      console.error("[discord] doctor failed", err);
+      return null;
+    }),
+  ]);
 
   const initial: DiscordConfigInput = {
     announcementsChannelId: "",
@@ -159,6 +173,39 @@ export default async function AdminDiscordPage() {
           }}
         />
       </div>
+
+      <Card className="mt-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-soft">
+            Live health check
+          </h2>
+          {doctor && (
+            <p className="text-xs text-ink-faint">
+              {doctor.counts.fail > 0
+                ? `${doctor.counts.fail} failing`
+                : doctor.counts.warn > 0
+                  ? `${doctor.counts.warn} warning${doctor.counts.warn === 1 ? "" : "s"}`
+                  : "All checks passing"}
+              {doctor.guildName ? ` · ${doctor.guildName}` : ""}
+            </p>
+          )}
+        </div>
+        <p className="mt-1 text-xs text-ink-faint">
+          Calls Discord on every load and compares the live server against this
+          configuration. Read-only — it never changes your server.
+        </p>
+        {doctor === null ? (
+          <p className="mt-4 text-xs text-red-700 dark:text-red-300">
+            The health check itself failed to run — see the server logs.
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-3 text-sm">
+            {doctor.checks.map((c) => (
+              <CheckRow key={c.id} check={c} />
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <Card className="mt-6">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-soft">
@@ -349,6 +396,32 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] uppercase tracking-wider text-ink-faint">{label}</p>
       <p className="mt-1 text-sm font-semibold text-ink">{value}</p>
     </div>
+  );
+}
+
+const CHECK_DOT: Record<Check["status"], string> = {
+  ok: "bg-emerald-500",
+  warn: "bg-amber-500",
+  fail: "bg-red-500",
+  skip: "bg-ink-faint/40",
+};
+
+function CheckRow({ check }: { check: Check }) {
+  return (
+    <li className="flex items-start gap-3">
+      <span
+        className={`mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full ${CHECK_DOT[check.status]}`}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-ink">{check.label}</p>
+        <p className="text-xs text-ink-faint">{check.detail}</p>
+        {check.remedy && (
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-200">
+            Fix: {check.remedy}
+          </p>
+        )}
+      </div>
+    </li>
   );
 }
 

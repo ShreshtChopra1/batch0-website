@@ -4,7 +4,7 @@ description: "Many student founders get stuck perfecting a Figma mockup. Here's 
 date: "2026-02-14"
 updated: "2026-02-14"
 category: "Build"
-author: "taran"
+author: "shresht"
 tags: ["figma", "design vs build", "prototyping", "mockups", "product design"]
 ---
 

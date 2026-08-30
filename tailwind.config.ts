@@ -55,7 +55,12 @@ const config: Config = {
         // a terminal, so it resolves to IBM Plex Mono. Kept under the `sans`
         // key so every existing font-sans/default-body usage inherits it
         // without touching hundreds of call sites.
+        // "Arrow Fallback" leads every stack. It declares only U+2190-21FF
+        // (see the @font-face in app/globals.css), so it is skipped for every
+        // other character and exists purely to stop → and ← from falling
+        // through to next/font's Arial metric-override face.
         sans: [
+          "Arrow Fallback",
           "var(--font-mono)",
           "ui-monospace",
           "SFMono-Regular",
@@ -66,12 +71,14 @@ const config: Config = {
         // a pixel headline degrading into system-ui would break the whole
         // look on a font failure.
         display: [
+          "Arrow Fallback",
           "var(--font-display)",
           "var(--font-mono)",
           "ui-monospace",
           "monospace",
         ],
         mono: [
+          "Arrow Fallback",
           "var(--font-mono)",
           "ui-monospace",
           "SFMono-Regular",

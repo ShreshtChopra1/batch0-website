@@ -43,12 +43,27 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient();
 
-  // Fetch application + cohort, ensure ownership and that it's accepted
-  const { data: app } = await admin
-    .from("applications")
-    .select("*, cohort:cohorts(*)")
-    .eq("id", applicationId)
-    .maybeSingle();
+  // The application, the founder-pass check, and the profile are each
+  // keyed off the request alone — none depends on another — so the three
+  // reads go out together.
+  const [{ data: app }, holdsFounderPass, { data: profile }] =
+    await Promise.all([
+      // Application + cohort, to verify ownership and that it's accepted.
+      admin
+        .from("applications")
+        .select("*, cohort:cohorts(*)")
+        .eq("id", applicationId)
+        .maybeSingle(),
+      // Founder-pass, checked at charge time rather than stamped on the
+      // application: a pass redeemed between acceptance and payment still
+      // counts, and a revoked one doesn't.
+      hasFounderPass(admin, user.id),
+      admin
+        .from("profiles")
+        .select("stripe_customer_id, email, full_name")
+        .eq("id", user.id)
+        .single(),
+    ]);
 
   if (!app || app.user_id !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -72,11 +87,9 @@ export async function POST(req: Request) {
   const country = getCountryFromHeaders(req.headers);
   const regional = getRegionalPrice(basePriceCents, country);
 
-  // Founder-pass perk: $30 off tuition, applied server-side so it cannot be
-  // requested — you either hold a live pass or you don't. Checked here, at
-  // charge time, rather than stamped on the application: a pass redeemed
-  // between acceptance and payment still counts, and a revoked one doesn't.
-  const passDiscountCents = (await hasFounderPass(admin, user.id))
+  // Founder-pass perk: $30 off tuition, applied server-side so it cannot
+  // be requested — you either hold a live pass or you don't.
+  const passDiscountCents = holdsFounderPass
     ? FOUNDER_PASS_TUITION_DISCOUNT_CENTS
     : 0;
   const priceCents = Math.max(0, regional.amountCents - passDiscountCents);
@@ -84,12 +97,6 @@ export async function POST(req: Request) {
   // forces the ad-hoc price_data path (same mechanics as regional pricing).
   const usePriceId =
     stripePriceId && !regional.isRegional && !passDiscountCents;
-
-  const { data: profile } = await admin
-    .from("profiles")
-    .select("stripe_customer_id, email, full_name")
-    .eq("id", user.id)
-    .single();
 
   // Always use the canonical site URL — never a request-controlled
   // header. The Origin header is attacker-controllable and would let a

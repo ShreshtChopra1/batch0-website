@@ -26,11 +26,14 @@ export function LockedFeature({
         {title} unlocks at enrollment.
       </h1>
       <p className="mt-4 text-[15px] leading-relaxed text-ink-soft">{lede}</p>
-      <div className="mt-7 flex items-center gap-3">
+      {/* whitespace-nowrap as well as flex-wrap: the links are still
+          shrinkable, so without it they squeeze onto one 375px row and
+          break their own labels mid-phrase instead of wrapping. */}
+      <div className="mt-7 flex flex-wrap items-center gap-3">
         {cta && (
           <Link
             href={cta.href}
-            className="press inline-flex items-center gap-2 rounded-md bg-phosphor px-4 py-2.5 text-sm font-semibold text-on-phosphor hover:bg-phosphor-200"
+            className="press inline-flex items-center gap-2 whitespace-nowrap rounded-md bg-phosphor px-4 py-2.5 text-sm font-semibold text-on-phosphor hover:bg-phosphor-200"
           >
             {cta.label}
             <ArrowRight className="h-4 w-4" />
@@ -38,7 +41,7 @@ export function LockedFeature({
         )}
         <Link
           href="/dashboard"
-          className="press inline-flex items-center gap-2 rounded-md border border-line px-4 py-2.5 text-sm font-medium text-ink-soft hover:border-ink/30 hover:bg-wash"
+          className="press inline-flex items-center gap-2 whitespace-nowrap rounded-md border border-line px-4 py-2.5 text-sm font-medium text-ink-soft hover:border-ink/30 hover:bg-wash"
         >
           Back to dashboard
         </Link>

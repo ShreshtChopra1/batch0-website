@@ -11,7 +11,7 @@ import {
   resolveKickoff,
   type ResolvedKickoff,
 } from "@/lib/kickoff";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import {
   ArrowRight,
   CalendarDays,
@@ -223,15 +223,14 @@ export default async function KickoffPage() {
               <p className="mt-2 text-sm leading-relaxed text-ink-soft">
                 {k.note}
               </p>
-              <Link
+              <ButtonLink
                 href={isPast ? "/dashboard/course" : "/dashboard/resources"}
-                className="mt-4 inline-block"
+                className="mt-4"
+                size="sm"
               >
-                <Button size="sm">
-                  {isPast ? "Open the course" : "Open pre-cohort resources"}
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              </Link>
+                {isPast ? "Open the course" : "Open pre-cohort resources"}
+                <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+              </ButtonLink>
             </div>
           </aside>
         </section>

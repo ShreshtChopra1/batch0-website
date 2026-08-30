@@ -235,10 +235,12 @@ export async function saveCohort(
     // the homepage, the program page, sponsors, challenges, the legal footer
     // and all 135 blog posts. Those are prerendered now, so without this an
     // admin's price or date change would sit behind the cache's revalidate
-    // window on every page except the two listed explicitly below.
+    // window on every page except the ones listed explicitly below.
     revalidateTag(SITE_CONFIG_TAG);
     revalidatePath("/");
+    revalidatePath("/program");
     revalidatePath("/apply");
+    revalidatePath("/signup");
     revalidatePath("/opengraph-image");
 
     return { id: cohortId! };
@@ -280,13 +282,15 @@ export async function deleteCohort(id: string): Promise<ActionResult> {
     // the homepage, the program page, sponsors, challenges, the legal footer
     // and all 135 blog posts. Those are prerendered now, so without this an
     // admin's price or date change would sit behind the cache's revalidate
-    // window on every page except the two listed explicitly below.
+    // window on every page except the ones listed explicitly below.
     revalidateTag(SITE_CONFIG_TAG);
     revalidatePath("/admin/applications");
     revalidatePath("/admin/students");
     revalidatePath("/admin/teams");
     revalidatePath("/");
+    revalidatePath("/program");
     revalidatePath("/apply");
+    revalidatePath("/signup");
     revalidatePath("/opengraph-image");
   });
 }

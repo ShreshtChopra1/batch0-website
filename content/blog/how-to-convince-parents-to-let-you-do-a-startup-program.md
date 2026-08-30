@@ -4,7 +4,7 @@ description: "Parents worry a startup program is a distraction or a scam. Here's
 date: "2026-02-11"
 updated: "2026-02-11"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["convince parents startup program", "parent objections", "startup accelerator permission", "teen program cost", "getting parents on board", "parent buy-in"]
 ---
 

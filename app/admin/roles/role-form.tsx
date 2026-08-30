@@ -2,8 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Input, Label, Select, Textarea, FieldError } from "@/components/ui/input";
 import {
   PERMISSION_GROUPS,
@@ -321,11 +320,12 @@ export function RoleForm({
               ? "Create role"
               : "Save changes"}
         </Button>
-        <Link href="/admin/roles">
-          <Button type="button" variant="secondary">
-            {mode === "create" ? "Cancel" : "Back to roles"}
-          </Button>
-        </Link>
+        {/* An anchor, so it can no longer be hijacked into submitting the
+            surrounding <form> — the old type="button" was the only thing
+            standing between this "Cancel" and a save. */}
+        <ButtonLink href="/admin/roles" variant="secondary">
+          {mode === "create" ? "Cancel" : "Back to roles"}
+        </ButtonLink>
         {saved && (
           <span className="text-sm text-emerald-700 dark:text-emerald-300">
             Saved. Anyone holding this role sees the change on their next page load.

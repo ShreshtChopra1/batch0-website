@@ -4,7 +4,7 @@ description: "An app store submission can waste weeks you don't have. Here's how
 date: "2026-02-16"
 updated: "2026-02-16"
 category: "Build"
-author: "taran"
+author: "shresht"
 tags: ["app vs website", "mobile app", "web app", "mvp platform", "pwa"]
 ---
 
