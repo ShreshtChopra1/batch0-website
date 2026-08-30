@@ -7,7 +7,7 @@
 // The canonical author roster. Posts reference an author by key; everything
 // else (display name, role, profile URL) is derived here so bylines and the
 // JSON-LD `author` node can never drift from each other.
-export type AuthorKey = "rishabh" | "taran" | "team";
+export type AuthorKey = "rishabh" | "shresht" | "team";
 
 export const AUTHORS: Record<
   AuthorKey,
@@ -18,8 +18,8 @@ export const AUTHORS: Record<
     role: "Co-founder, batch0",
     url: "https://batch0.org/#who-runs-this",
   },
-  taran: {
-    name: "Taran Bethi",
+  shresht: {
+    name: "Shresht Chopra",
     role: "Co-founder, batch0",
     url: "https://batch0.org/#who-runs-this",
   },

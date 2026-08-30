@@ -4,7 +4,7 @@ description: "Building a startup with a close friend can save the friendship or 
 date: "2026-02-13"
 updated: "2026-02-13"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["cofounder friendship", "friend cofounder conflict", "teen cofounder roles", "working with friends", "cofounder communication", "startup friendship"]
 ---
 

@@ -4,7 +4,7 @@ description: "Imposter syndrome hits young founders hard when adults take you se
 date: "2026-02-01"
 updated: "2026-02-01"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["imposter syndrome founder", "teen founder confidence", "feeling like a fraud", "young entrepreneur mindset", "founder self doubt", "confidence in business"]
 ---
 

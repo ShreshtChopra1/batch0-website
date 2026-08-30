@@ -4,7 +4,7 @@ description: "Watching other teen founders win on LinkedIn wrecks your head. How
 date: "2026-02-09"
 updated: "2026-02-09"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["founder comparison", "linkedin envy", "teen founder anxiety", "run your own race", "social media founders", "comparison trap"]
 ---
 

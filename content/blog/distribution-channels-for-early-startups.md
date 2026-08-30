@@ -4,7 +4,7 @@ description: "Great products don't sell themselves; distribution does. A tour of
 date: "2026-05-19"
 updated: "2026-05-19"
 category: "Market"
-author: "taran"
+author: "shresht"
 tags: ["distribution", "marketing channels", "growth", "traction", "acquisition"]
 ---
 

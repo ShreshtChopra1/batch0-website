@@ -4,7 +4,7 @@ description: "Deciding when to quit a startup is harder than starting one. The h
 date: "2026-02-23"
 updated: "2026-02-23"
 category: "Founders"
-author: "taran"
+author: "shresht"
 tags: ["when to quit a startup", "pivot or persevere", "young founder decisions", "startup quitting", "sunk cost", "founder burnout"]
 ---
 

@@ -4,7 +4,7 @@ description: "Stripe, PayPal, and most processors require 18+. How a teen founde
 date: "2026-02-08"
 updated: "2026-02-08"
 category: "Build"
-author: "taran"
+author: "shresht"
 tags: ["accept payments", "stripe under 18", "collect money", "teen business", "payment processor"]
 ---
 
