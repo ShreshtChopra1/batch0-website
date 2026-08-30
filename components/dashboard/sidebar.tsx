@@ -83,7 +83,9 @@ function StaffLink({
   icon: any;
 }) {
   return (
-    <Link href={href} className={SIDEBAR_ROW}>
+    // prefetch={false}: authed dynamic route + staleTimes.dynamic=0 makes
+    // prefetched payloads throwaway work — see components/sidebar-nav.tsx.
+    <Link href={href} prefetch={false} className={SIDEBAR_ROW}>
       <Icon className="h-4 w-4" />
       {label}
     </Link>

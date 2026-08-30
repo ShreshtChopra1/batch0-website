@@ -139,7 +139,10 @@ export default async function BillingPage({
         {(payments?.length ?? 0) === 0 && history.length === 0 ? (
           <p className="text-sm text-ink-soft">No payments yet.</p>
         ) : (
-          <table className="w-full text-sm">
+          // The page body clips horizontal overflow, so a four-column table
+          // needs its own scroller or the Status column is lost at 375px.
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-ink-faint">
                 <th className="pb-3">Date</th>
@@ -181,6 +184,7 @@ export default async function BillingPage({
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>

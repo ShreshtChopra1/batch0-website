@@ -4,6 +4,7 @@ import { Wordmark } from "@/components/wordmark";
 import Link from "next/link";
 import { track } from "@vercel/analytics";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AuthLabel, useIsAuthed } from "@/components/auth-label";
 
 // Use absolute hrefs (`/#anchor`) so hash links still resolve when the
 // navbar is rendered on subroutes.
@@ -14,15 +15,28 @@ const LINKS = [
   { href: "/#faq", label: "FAQ" },
 ] as const;
 
+/**
+ * The marketing navbar.
+ *
+ * It used to take an `authedHome` prop, resolved on the server from the
+ * session. That one prop is why six marketing routes — the homepage, the blog
+ * index, and all 135 blog posts — rendered per-request instead of as static
+ * HTML: producing it meant reading cookies, and reading cookies opts a route
+ * out of prerendering entirely.
+ *
+ * So the CTA now points at the constant `/home`, which redirects server-side
+ * (app/home/route.ts), and only the *word* on the button is auth-dependent.
+ * That word is chosen in CSS from the `data-authed` flag stamped on <html>
+ * before first paint, so the static HTML is correct on the first frame for
+ * both audiences — nothing swaps, nothing shifts (see AuthLabel).
+ */
 export default function Navbar({
-  authedHome,
   cohortLabel = "the next cohort",
 }: {
-  authedHome?: string | null;
   cohortLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const isAuthed = !!authedHome;
+  const isAuthed = useIsAuthed();
 
   // Close the mobile menu on escape; lock scroll while open.
   useEffect(() => {
@@ -36,8 +50,10 @@ export default function Navbar({
     };
   }, [open]);
 
-  const applyHref = isAuthed ? authedHome! : "/apply";
-  const applyLabel = isAuthed ? "Dashboard" : `Apply for ${cohortLabel}`;
+  // Constant on the server AND for the signed-out majority; /home sorts out
+  // where a signed-in visitor actually belongs.
+  const applyHref = "/home";
+  const applyLabel = `Apply for ${cohortLabel}`;
 
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-paper pt-safe">
@@ -63,17 +79,29 @@ export default function Navbar({
 
         <div className="hidden items-center gap-3 md:flex">
           <ThemeToggle />
-          {!isAuthed && (
-            <Link href="/login" className="text-sm text-ink-soft hover:text-ink">
-              Log in
-            </Link>
-          )}
+          {/* Always rendered; `.when-anon` removes it outright for a
+              signed-in visitor. The decision is made in CSS off the
+              `data-authed` flag <html> carries before first paint, so the
+              link is gone from the first frame rather than unmounting a tick
+              after hydration — nothing shifts, and no dead gap is left
+              behind where it used to be. See lib/auth-flag.ts. */}
+          <Link
+            href="/login"
+            className="when-anon text-sm text-ink-soft hover:text-ink"
+          >
+            Log in
+          </Link>
           <Link
             href={applyHref}
+            // /home is force-dynamic and resolved in middleware — prefetching
+            // it fires the redirect chain for real, on every marketing page
+            // view, and `staleTimes.dynamic = 0` throws the result away
+            // immediately. Same reasoning as components/dashboard/sidebar.tsx.
+            prefetch={false}
             onClick={() => !isAuthed && track("apply_click", { location: "navbar" })}
             className="press rounded-md bg-phosphor px-4 py-2 text-sm font-semibold text-on-phosphor shadow-cta hover:bg-phosphor-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
           >
-            {applyLabel}
+            <AuthLabel signedOut={applyLabel} />
           </Link>
         </div>
 
@@ -124,13 +152,14 @@ export default function Navbar({
             <div className="flex flex-col gap-2 pt-3">
               <Link
                 href={applyHref}
+                prefetch={false}
                 onClick={() => {
                   setOpen(false);
                   if (!isAuthed) track("apply_click", { location: "navbar-mobile" });
                 }}
                 className="press rounded-md bg-phosphor px-4 py-3 text-center text-[15px] font-semibold text-on-phosphor shadow-cta"
               >
-                {applyLabel}
+                {isAuthed ? "Dashboard" : applyLabel}
               </Link>
               {!isAuthed && (
                 <Link

@@ -300,20 +300,25 @@ export async function canBypassClosedApplications(
 }
 
 /**
- * Every user holding a live pass.
+ * Every user holding a live pass — or, when `userIds` is given, just the
+ * holders among those users.
  *
  * Returned as a Set so the admin review queue can badge rows without an N+1,
  * mirroring how lib/referrals.ts resolveReferrersByCode() serves the referral
- * badge on the same page.
+ * badge on the same page. Pass `userIds` whenever the users on screen are
+ * already known (e.g. one team's members): it bounds the read to those rows
+ * instead of scanning every pass ever redeemed, which grows forever.
  */
 export async function passHolderUserIds(
   client: SupabaseClient,
+  userIds?: string[],
 ): Promise<Set<string>> {
-  const { data } = await client
+  const query = client
     .from("founder_passes")
     .select("redeemed_by")
     .not("redeemed_by", "is", null)
     .is("revoked_at", null);
+  const { data } = await (userIds ? query.in("redeemed_by", userIds) : query);
   const out = new Set<string>();
   for (const r of (data ?? []) as Array<{ redeemed_by: string | null }>) {
     if (r.redeemed_by) out.add(r.redeemed_by);

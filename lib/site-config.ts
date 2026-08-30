@@ -1,5 +1,9 @@
 import { cache } from "react";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unstable_cache } from "next/cache";
+import {
+  createAdminClient,
+  createPublicReadClient,
+} from "@/lib/supabase/admin";
 import { getRegionalPrice } from "@/lib/pricing";
 import {
   buildMetaDescription,
@@ -277,38 +281,117 @@ function derive(
  * pricing — see `lib/pricing.ts`. When omitted, the cohort's default
  * price is used.
  */
+/**
+ * Request-cached, but NOT cached across requests: this still reads through
+ * the no-store admin client, because the gating flags it carries
+ * (`applications_open`, `founder_pass_early_access`, `referrals_enabled`)
+ * decide what a signed-in person is allowed to do and must never be stale.
+ *
+ * The React cache matters because the /dashboard tree resolves this twice in
+ * one render — once in the layout for `referralsEnabled`, once in the page —
+ * and without it each resolution would repeat the same queries.
+ */
+const loadPrivateData = cache(() => loadSiteConfigData(createAdminClient()));
+
 export async function getSiteConfig(
   opts: { countryCode?: string | null } = {},
 ): Promise<SiteConfig> {
-  // Unwrap to a primitive before hitting the cache. React's `cache()` keys on
-  // argument identity, and `{ countryCode }` allocates a fresh object at every
-  // call site — passing the options bag straight through would miss on every
-  // single call and quietly make the memoisation a no-op.
-  return getSiteConfigCached(opts.countryCode ?? null);
+  // `loadPrivateData` above carries the React cache(), so the memoisation
+  // keys on nothing rather than on an options bag — `{ countryCode }`
+  // allocates a fresh object at every call site, and passing it through
+  // cache() directly would miss every time and make the whole thing a no-op.
+  //
+  // That memoisation is also what makes `generateMetadata` free: Next runs it
+  // and the page component in the same request, so `/` resolves the cohort
+  // once and both the meta description and the rendered page read that one
+  // result — no second round trip, and no chance of the snippet and the page
+  // body disagreeing because they queried at different moments. Country is
+  // applied per-request on top, since `derive()` is pure.
+  return assemble(await loadPrivateData(), opts.countryCode ?? null);
 }
 
 /**
- * Request-scoped memoisation of the real work.
+ * The same config, read through a cacheable client and memoised across
+ * requests. This is what public marketing pages call.
  *
- * This is what makes `generateMetadata` free. Next.js runs `generateMetadata`
- * and the page component in the same request, so `/` now resolves the cohort
- * once and both the meta description and the rendered page read that one
- * result — no second Supabase round-trip, and no chance of the snippet and
- * the page body disagreeing because they queried at different moments.
+ * Two things have to be true at once for a marketing page to prerender, and
+ * this function is one of them (the other is not touching cookies()):
+ *
+ *  1. The read must not be `no-store` — hence createPublicReadClient(). Do NOT
+ *     "fix" this by wrapping the no-store client in unstable_cache: the route
+ *     then prerenders, the DynamicServerError is thrown onto a *copy* of the
+ *     static-generation store where nothing reads it, postgrest swallows it as
+ *     a failed request, and getSiteConfig quietly returns FALLBACK_COHORT. You
+ *     get a green build serving hardcoded prices with the "N spots left" and
+ *     "Applications close in N days" signals silently gone.
+ *  2. unstable_cache gives it a tag, so an admin editing settings or a cohort
+ *     publishes immediately instead of waiting out `revalidate`. See
+ *     revalidateTag(SITE_CONFIG_TAG) in the admin actions.
+ *
+ * Country is applied per-request on top of the cached data — `derive()` is
+ * pure, so regional pricing costs nothing and isn't baked into the cache.
  */
-const getSiteConfigCached = cache(async function getSiteConfigUncached(
-  countryCode: string | null,
-): Promise<SiteConfig> {
-  const admin = createAdminClient();
+export const SITE_CONFIG_TAG = "site-config";
 
-  const [settingsRes, pinnedIdRes] = await Promise.all([
+const loadPublicData = unstable_cache(
+  async () => loadSiteConfigData(createPublicReadClient()),
+  ["site-config-public"],
+  { revalidate: 300, tags: [SITE_CONFIG_TAG] },
+);
+
+export async function getPublicSiteConfig(
+  opts: { countryCode?: string | null } = {},
+): Promise<SiteConfig> {
+  const data = await loadPublicData();
+  if (!data.cohort && process.env.NODE_ENV === "production") {
+    // Loud on purpose. A null cohort here means the marketing site is serving
+    // FALLBACK_COHORT — dates and price hand-synced on a date in the past —
+    // and every other symptom of that is invisible.
+    console.error(
+      "[site-config] public read returned no cohort; marketing pages are on FALLBACK_COHORT",
+    );
+  }
+  return assemble(data, opts.countryCode ?? null);
+}
+
+type SiteConfigData = {
+  cohort: ActiveCohort | null;
+  settings: SiteSettings;
+  enrolledCount: number;
+};
+
+function assemble(
+  data: SiteConfigData,
+  countryCode: string | null,
+): SiteConfig {
+  return {
+    cohort: data.cohort,
+    settings: data.settings,
+    derived: derive(
+      data.cohort,
+      data.enrolledCount,
+      data.settings.applicationsOpen,
+      countryCode,
+    ),
+  };
+}
+
+async function loadSiteConfigData(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<SiteConfigData> {
+  // One parallel wave. The unfiltered settings scan already carries the
+  // active_cohort_id row, so the pinned id never needs a query of its own,
+  // and the fallback cohort candidate (next upcoming/active by start date)
+  // rides alongside with its enrollment count embedded. Only an admin pin
+  // pointing somewhere other than that candidate costs a second trip.
+  const [settingsRes, fallbackCohortRes] = await Promise.all([
     admin.from("site_settings").select("key, value"),
-    // We fetch the pinned cohort id separately so the cohort row query
-    // can be a single .single() call when it exists.
     admin
-      .from("site_settings")
-      .select("value")
-      .eq("key", "active_cohort_id")
+      .from("cohorts")
+      .select("*, enrollments(count)")
+      .in("status", ["upcoming", "active"])
+      .order("starts_on", { ascending: true, nullsFirst: false })
+      .limit(1)
       .maybeSingle(),
   ]);
 
@@ -349,8 +432,8 @@ const getSiteConfigCached = cache(async function getSiteConfigUncached(
   };
 
   const pinnedId =
-    typeof pinnedIdRes.data?.value === "string"
-      ? (pinnedIdRes.data!.value as string)
+    typeof raw.active_cohort_id === "string"
+      ? (raw.active_cohort_id as string)
       : null;
 
   // Resolve the active cohort: pinned id wins, otherwise the next
@@ -376,46 +459,25 @@ const getSiteConfigCached = cache(async function getSiteConfigUncached(
     };
   }
 
-  let cohort: ActiveCohort | null = null;
-  if (pinnedId) {
+  let cohortRow: any = fallbackCohortRes.data ?? null;
+  if (pinnedId && pinnedId !== cohortRow?.id) {
+    // A pin may point at a cohort of any status (that is the point of
+    // pinning), so the upcoming/active candidate can't stand in for it.
+    // A pin that resolves to nothing falls back to the candidate.
     const { data } = await admin
       .from("cohorts")
-      .select("*")
+      .select("*, enrollments(count)")
       .eq("id", pinnedId)
       .maybeSingle();
-    if (data) cohort = toCohort(data);
+    if (data) cohortRow = data;
   }
-  if (!cohort) {
-    const { data } = await admin
-      .from("cohorts")
-      .select("*")
-      .in("status", ["upcoming", "active"])
-      .order("starts_on", { ascending: true, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
-    if (data) cohort = toCohort(data);
-  }
+  const cohort = cohortRow ? toCohort(cohortRow) : null;
 
-  // Live enrollment count for the resolved active cohort. Cheap
-  // count(*) query — no per-row read. Returns 0 (rather than erroring)
-  // when there's no cohort or the count query fails for any reason.
-  let enrolledCount = 0;
-  if (cohort?.id) {
-    const { count } = await admin
-      .from("enrollments")
-      .select("id", { count: "exact", head: true })
-      .eq("cohort_id", cohort.id);
-    if (typeof count === "number") enrolledCount = count;
-  }
+  // Live enrollment count, read off the embedded count(*) aggregate — no
+  // per-row read. Reads as 0 (rather than erroring) when there's no
+  // cohort or the embed is missing for any reason.
+  const embeddedCount = cohortRow?.enrollments?.[0]?.count;
+  const enrolledCount = typeof embeddedCount === "number" ? embeddedCount : 0;
 
-  return {
-    cohort,
-    settings,
-    derived: derive(
-      cohort,
-      enrolledCount,
-      settings.applicationsOpen,
-      countryCode,
-    ),
-  };
-});
+  return { cohort, settings, enrolledCount };
+}

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Navbar from "@/components/navbar";
 import Hero from "@/components/hero";
 import HowItWorks from "@/components/how-it-works";
@@ -14,25 +13,27 @@ import StickyMobileCta from "@/components/sticky-mobile-cta";
 import { ChallengeMarquee } from "@/components/challenge-marquee";
 import { ChallengeWinners } from "@/components/challenge-winners";
 import { FeaturedGuides } from "@/components/featured-guides";
-import { getSiteConfig, metaDescription } from "@/lib/site-config";
+import { getPublicSiteConfig, metaDescription } from "@/lib/site-config";
 import { getFeaturedPosts, getAllPostsMeta } from "@/lib/blog";
 import { getActiveChallenge, getPublicWinners } from "@/lib/challenges";
-import { getCountryFromHeaders } from "@/lib/pricing";
-import { getProfile, roleHome } from "@/lib/auth";
+import { RegionalPrice } from "@/components/regional-price";
 
 // The homepage snippet is the single highest-leverage string on the site: it
 // is what a student sees on Google before they ever reach us, and for most of
 // them it is the only thing they will read. So it is generated per request
 // from the live cohort record rather than hardcoded at build time.
 //
-// This costs nothing. `getSiteConfig` is memoised per request (React
-// `cache()`), and the page component below already calls it — so metadata and
-// body share one Supabase round-trip and can never disagree.
+// This costs nothing, and it must be the *public* read: `getSiteConfig` goes
+// through the no-store admin client, which throws DynamicServerError during
+// prerendering — postgrest swallows it, the snippet silently falls back to
+// FALLBACK_COHORT, and the whole page drops off the static path. The cached
+// read is shared with the page component below, so metadata and body come
+// from one query and can never disagree.
 //
 // Title inherits from the root layout. The canonical is set here, not in the
 // layout, so child routes don't all inherit "/".
 export async function generateMetadata(): Promise<Metadata> {
-  const config = await getSiteConfig({
+  const config = await getPublicSiteConfig({
     // Deliberately region-agnostic: crawlers hit us from arbitrary IPs, and a
     // snippet quoting a regional discount to everyone would misprice the
     // program for most searchers. The page body still localises.
@@ -47,24 +48,36 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+// Prerendered with ISR — nothing here is per-visitor. The auth-dependent CTA
+// resolves in the browser (/home + AuthLabel), and regional tuition, the last
+// per-request input, is a client-side text swap: the pricing override table
+// has exactly one country, so the server renders the base price and
+// <RegionalPrice> corrects the label for visitors whose clock says India.
+// Admin edits revalidate SITE_CONFIG_TAG and this path directly, so the
+// 300s window is only the fallback horizon.
+export const revalidate = 300;
+
 export default async function Home() {
-  const countryCode = getCountryFromHeaders(headers());
-  const [config, profile, activeChallenge, winners, featured, allPosts] =
+  const [config, regionalConfig, activeChallenge, winners, featured, allPosts] =
     await Promise.all([
-      getSiteConfig({ countryCode }),
-      getProfile(),
+      getPublicSiteConfig({ countryCode: null }),
+      // The same cached data derived as an Indian visitor sees it — this is
+      // where <RegionalPrice>'s swap target comes from, so the label always
+      // matches what derive() would have produced server-side.
+      getPublicSiteConfig({ countryCode: "IN" }),
       getActiveChallenge(),
       getPublicWinners(),
       getFeaturedPosts(6),
       getAllPostsMeta(),
     ]);
-  const authedHome = profile ? await roleHome(profile.role) : null;
   return (
-    <main className="min-h-screen bg-paper">
-      <Navbar
-        authedHome={authedHome}
-        cohortLabel={config.derived.cohortLabel || "the next cohort"}
-      />
+    // The outer element is a plain <div>, not <main>. A <main> that contains
+    // the navbar and the footer swallows their `banner` and `contentinfo`
+    // landmarks, and it makes the "Skip to content" link land above the very
+    // nav it is supposed to skip. <main> now wraps only the content, and
+    // carries no layout classes of its own so nothing moves.
+    <div className="min-h-screen bg-paper">
+      <Navbar cohortLabel={config.derived.cohortLabel || "the next cohort"} />
       {activeChallenge && (
         <ChallengeMarquee
           challenge={{
@@ -77,20 +90,26 @@ export default async function Home() {
           }}
         />
       )}
-      <Hero config={config} authedHome={authedHome} />
-      <HowItWorks config={config} />
-      <Deliverables />
-      <Founder contactEmail={config.settings.contactEmail} />
-      <ChallengeWinners winners={winners} />
-      {/* Placed before pricing on purpose: someone weighing $130 should see
-          proof the teaching is good before they see the number. It also gives
-          the blog its only link from the site's strongest page. */}
-      <FeaturedGuides posts={featured} total={allPosts.length} />
-      <Pricing config={config} />
-      <FAQ config={config} />
-      <CTA config={config} />
+      <main id="main-content" tabIndex={-1}>
+        <Hero config={config} />
+        <HowItWorks config={config} />
+        <Deliverables />
+        <Founder contactEmail={config.settings.contactEmail} />
+        <ChallengeWinners winners={winners} />
+        {/* Placed before pricing on purpose: someone weighing $130 should see
+            proof the teaching is good before they see the number. It also gives
+            the blog its only link from the site's strongest page. */}
+        <FeaturedGuides posts={featured} total={allPosts.length} />
+        <Pricing config={config} />
+        <FAQ config={config} />
+        <CTA config={config} />
+      </main>
       <Footer config={config} />
-      <StickyMobileCta config={config} authedHome={authedHome} />
-    </main>
+      <StickyMobileCta config={config} />
+      <RegionalPrice
+        base={config.derived.priceLabel}
+        regional={regionalConfig.derived.priceLabel}
+      />
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { webcrypto } from "crypto";
+import { cache } from "react";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Role } from "@/lib/types";
@@ -12,8 +13,12 @@ const API = "https://discord.com/api/v10";
 // IMPORTANT: every helper that touches Discord short-circuits when this is
 // false, so callers don't need to remember to check. UI gating reads the
 // same flag via getDiscordSettings().enabled.
+//
+// React-cached: one flow can hit the gate several times (each helper checks
+// it), and one settings read per request covers them all. The cache never
+// outlives the request, so a flip still takes effect on the very next one.
 // ---------------------------------------------------------------------------
-export async function isDiscordEnabled(): Promise<boolean> {
+export const isDiscordEnabled = cache(async (): Promise<boolean> => {
   try {
     const admin = createAdminClient();
     const { data } = await admin
@@ -29,7 +34,7 @@ export async function isDiscordEnabled(): Promise<boolean> {
     console.error("[discord] enabled check failed", err);
     return true;
   }
-}
+});
 
 // ---------------------------------------------------------------------------
 // Webhook posting (legacy — still used for the announcements channel +
@@ -81,8 +86,10 @@ export async function postDiscordWebhook(args: {
 
 // ---------------------------------------------------------------------------
 // Settings: channel + role IDs are admin-configurable via site_settings so
-// staff can re-target them without redeploying. We cache nothing — these
-// values change rarely and the queries are cheap.
+// staff can re-target them without redeploying. React-cached per request:
+// a single Discord-touching flow reads these several times (enabled gate,
+// channel routing, role map) and should pay for the query once. Nothing is
+// cached across requests, so edits still apply immediately.
 // ---------------------------------------------------------------------------
 export type DiscordSettings = {
   enabled: boolean;
@@ -134,7 +141,7 @@ const SETTING_KEYS = [
   "discord_role_founder_pass_id",
 ] as const;
 
-export async function getDiscordSettings(): Promise<DiscordSettings> {
+export const getDiscordSettings = cache(async (): Promise<DiscordSettings> => {
   const admin = createAdminClient();
   const { data } = await admin
     .from("site_settings")
@@ -172,7 +179,7 @@ export async function getDiscordSettings(): Promise<DiscordSettings> {
     },
     founderPassRoleId: str("discord_role_founder_pass_id"),
   };
-}
+});
 
 /**
  * Persist a single site_settings key (used after we create new

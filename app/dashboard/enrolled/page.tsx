@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser, getProfile } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { PaymentResult } from "@/components/payment-result";
 import { syncCheckoutSession } from "@/lib/stripe-fulfillment";
 import { fmtDateOnly } from "@/lib/pre-cohort";
@@ -151,12 +151,10 @@ export default async function EnrolledPage({
       )}
 
       <div className="mt-10 flex flex-wrap items-center gap-3">
-        <Link href={started ? "/dashboard/course" : "/dashboard/kickoff"}>
-          <Button>
-            {started ? "Open the course" : "See kickoff details"}
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </Link>
+        <ButtonLink href={started ? "/dashboard/course" : "/dashboard/kickoff"}>
+          {started ? "Open the course" : "See kickoff details"}
+          <ArrowRight className="h-4 w-4 shrink-0" />
+        </ButtonLink>
         <Link
           href="/dashboard/billing/receipts"
           className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-soft hover:text-ink"

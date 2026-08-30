@@ -4,8 +4,7 @@ import { notFound } from "next/navigation";
 import Navbar from "@/components/navbar";
 import Footer from "@/components/footer";
 import { ApplyCta } from "@/components/apply-cta";
-import { getSiteConfig } from "@/lib/site-config";
-import { getProfile, roleHome } from "@/lib/auth";
+import { getPublicSiteConfig } from "@/lib/site-config";
 import {
   getPostBySlug,
   getPostSlugs,
@@ -19,9 +18,27 @@ import { categoryPath } from "@/lib/blog-shared";
 // Every post is a file on disk, so the whole set can be pre-rendered at
 // build time — static HTML is the fastest thing to serve and the cleanest
 // thing for both search crawlers and AI retrieval bots to read.
+//
+// This was true in intent but not in fact: the build table printed "● SSG"
+// for this route (which only means generateStaticParams exists) while the
+// prerender manifest contained zero /blog/<slug> entries. Two dynamic APIs
+// were aborting every prerender — cookies(), via a getProfile() call that
+// existed to pick one navbar href, and a forced `no-store` fetch inside
+// getSiteConfig(). Both are gone; these 135 articles are real static HTML
+// again, which is what the two worst Core Web Vitals scores in production
+// were waiting on.
 export async function generateStaticParams() {
   return (await getPostSlugs()).map((slug) => ({ slug }));
 }
+
+// Posts are immutable prose; the only thing on the page that moves is the
+// price in the end-of-post CTA. An hour is a generous ceiling on staleness,
+// and admin edits publish immediately anyway — the settings and cohort
+// actions call revalidateTag(SITE_CONFIG_TAG), and publishing a post
+// revalidates /blog. `dynamicParams` stays default-true, so a post authored
+// in the admin panel after the last build still renders on first request and
+// is cached from then on.
+export const revalidate = 3600;
 
 export async function generateMetadata({
   params,
@@ -70,10 +87,14 @@ export default async function BlogPostPage({
   if (!post) notFound();
   const { meta, html } = post;
 
-  const [config, profile] = await Promise.all([getSiteConfig(), getProfile()]);
-  const authedHome = profile ? await roleHome(profile.role) : null;
+  // Both of these are cheap now and neither depends on the other: config is
+  // a tagged cache read, related posts come off a process-level index of the
+  // post frontmatter rather than re-reading 135 files from disk.
+  const [config, related] = await Promise.all([
+    getPublicSiteConfig(),
+    getRelatedPosts(meta),
+  ]);
   const cohortLabel = config.derived.cohortLabel || "the next cohort";
-  const related = await getRelatedPosts(meta);
   const url = `${SITE}/blog/${meta.slug}`;
   const ogImage = `${SITE}/blog/${meta.slug}/opengraph-image`;
 
@@ -132,8 +153,12 @@ export default async function BlogPostPage({
   };
 
   return (
-    <main className="min-h-screen bg-paper">
-      <Navbar authedHome={authedHome} cohortLabel={cohortLabel} />
+    // <main> wraps the content only: containing the navbar and footer in it
+    // suppresses their banner/contentinfo landmarks and sends "Skip to
+    // content" above the nav. No layout classes on it, so nothing shifts.
+    <div className="min-h-screen bg-paper">
+      <Navbar cohortLabel={cohortLabel} />
+      <main id="main-content" tabIndex={-1}>
 
       <article className="px-5 sm:px-6">
         <div className="mx-auto max-w-[720px] pt-10 sm:pt-14">
@@ -224,6 +249,7 @@ export default async function BlogPostPage({
         </section>
       )}
 
+      </main>
       <Footer config={config} />
 
       <script
@@ -234,6 +260,6 @@ export default async function BlogPostPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-    </main>
+    </div>
   );
 }

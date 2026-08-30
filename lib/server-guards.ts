@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { capabilitiesForRole } from "@/lib/roles";
 import {
@@ -23,7 +24,26 @@ import type { Role } from "@/lib/types";
  * every mutation re-checks here.
  */
 
-async function getActor(): Promise<{
+/**
+ * The actor for a MUTATION, verified against the auth server.
+ *
+ * Deliberately `supabase.auth.getUser()` and not the shared, request-cached
+ * getUser() from lib/auth.ts. That one now verifies the JWT locally
+ * (getClaims) to keep reads fast, which is the right trade for "which page may
+ * you see" — but it means a token stays good until its `exp`, up to an hour
+ * after the account behind it is gone.
+ *
+ * This module guards writes, including `admin.auth.admin.deleteUser()` in
+ * app/admin/students/[id]/actions.ts. If "delete this account" left the
+ * deleted principal able to invoke server actions for another hour, that is
+ * not a performance trade, it is a broken security control. getUser() asks
+ * GoTrue whether the user still exists, so revocation is immediate here.
+ *
+ * The cost is one network round trip per mutation, which is noise next to the
+ * write itself. Still request-cached, so an action passing through several
+ * guards plus logAudit pays it once and they all agree on the actor.
+ */
+const getActor = cache(async function getActor(): Promise<{
   userId: string;
   role: Role;
   caps: Capabilities;
@@ -40,7 +60,7 @@ async function getActor(): Promise<{
     .maybeSingle();
   const role = (profile?.role as Role) ?? "student";
   return { userId: user.id, role, caps: await capabilitiesForRole(role) };
-}
+});
 
 /** The signed-in user's capabilities. Throws when signed out. */
 export async function requireActor(): Promise<{
@@ -108,10 +128,8 @@ export async function assertStaff(): Promise<{
 }
 
 export async function assertSelf(): Promise<{ userId: string }> {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
-  return { userId: user.id };
+  // Same reasoning as getActor(): this authorises writes, so it verifies
+  // against the auth server rather than trusting a locally-valid JWT.
+  const { userId } = await getActor();
+  return { userId };
 }

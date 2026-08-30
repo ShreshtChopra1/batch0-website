@@ -9,6 +9,25 @@ import { FlowPlayer, type CompiledStep } from "./flow-player";
 
 export const metadata = { title: "Before One · batch0" };
 
+// Flow bodies change only when an admin edits them, yet every view renders
+// every step body and outcome block through the unified pipeline. renderMarkdown
+// is pure (content in, HTML out), so rendered HTML is memoized across requests,
+// keyed by the markdown itself — an edit misses naturally, and identical
+// content can never collide the way a cheap hash could. Bounded so a
+// long-lived server can't grow it without limit; a full clear at the cap is
+// fine because entries are cheap to recompute.
+const HTML_CACHE_MAX = 300;
+const htmlCache = new Map<string, string>();
+
+async function renderStepMarkdown(body: string): Promise<string> {
+  const hit = htmlCache.get(body);
+  if (hit !== undefined) return hit;
+  const html = await renderMarkdown(body);
+  if (htmlCache.size >= HTML_CACHE_MAX) htmlCache.clear();
+  htmlCache.set(body, html);
+  return html;
+}
+
 export default async function FlowPage({
   params,
 }: {
@@ -57,14 +76,14 @@ export default async function FlowPage({
         kind: s.kind,
         config,
         sort_order: s.sort_order,
-        bodyHtml: s.body ? await renderMarkdown(s.body) : null,
+        bodyHtml: s.body ? await renderStepMarkdown(s.body) : null,
         blocks: config.blocks
           ? await Promise.all(
               config.blocks.map(async (b) => ({
                 when: b.when,
                 title: b.title,
                 body: b.body,
-                bodyHtml: await renderMarkdown(b.body),
+                bodyHtml: await renderStepMarkdown(b.body),
               })),
             )
           : null,

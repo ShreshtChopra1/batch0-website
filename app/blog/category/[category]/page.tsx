@@ -5,8 +5,7 @@ import Navbar from "@/components/navbar";
 import Footer from "@/components/footer";
 import { ApplyCta } from "@/components/apply-cta";
 import { PostRow, CategoryNav } from "@/components/post-row";
-import { getSiteConfig } from "@/lib/site-config";
-import { getProfile, roleHome } from "@/lib/auth";
+import { getPublicSiteConfig } from "@/lib/site-config";
 import { getPostsByCategory } from "@/lib/blog";
 import {
   CATEGORIES,
@@ -28,6 +27,13 @@ import { blogTitleTag } from "@/lib/seo-meta";
 //
 // Statically generated: the category set is a compile-time constant, so
 // there's no reason to resolve these per request.
+// Prerendered like /blog and the articles themselves. This route arrived on
+// the pre-refactor pattern — getProfile() for a navbar prop, plus the no-store
+// getSiteConfig() — which is exactly the pair that was keeping every other
+// marketing route on the per-request path. generateStaticParams alone doesn't
+// make a route static; not reading cookies is what does.
+export const revalidate = 3600;
+
 export function generateStaticParams() {
   return CATEGORIES.map((c) => ({ category: categorySlug(c) }));
 }
@@ -72,12 +78,10 @@ export default async function BlogCategoryPage({
   const category = categoryFromSlug(params.category);
   if (!category) notFound();
 
-  const [config, profile, posts] = await Promise.all([
-    getSiteConfig(),
-    getProfile(),
+  const [config, posts] = await Promise.all([
+    getPublicSiteConfig(),
     getPostsByCategory(category),
   ]);
-  const authedHome = profile ? await roleHome(profile.role) : null;
   const cohortLabel = config.derived.cohortLabel || "the next cohort";
   const copy = CATEGORY_COPY[category];
   const url = `${SITE}${categoryPath(category)}`;
@@ -124,7 +128,7 @@ export default async function BlogCategoryPage({
 
   return (
     <main className="min-h-screen bg-paper">
-      <Navbar authedHome={authedHome} cohortLabel={cohortLabel} />
+      <Navbar cohortLabel={cohortLabel} />
 
       <section className="px-5 pb-10 pt-14 sm:px-6 sm:pt-20">
         <div className="mx-auto max-w-[1100px]">

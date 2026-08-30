@@ -1,8 +1,7 @@
 "use client";
 import { useRef, useState, useTransition } from "react";
-import Link from "next/link";
 import { Upload, CheckCircle2, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Input, Textarea, Label, FieldError } from "@/components/ui/input";
 import {
   HTTP_URL_RE,
@@ -11,7 +10,6 @@ import {
   isUploadAnswer,
   type Challenge,
 } from "@/lib/challenges-shared";
-import { createClient } from "@/lib/supabase/client";
 import { submitChallengeApplication, getChallengeUploadToken } from "./actions";
 
 /** Applicant video uploads are capped client-side; the bucket enforces its
@@ -84,6 +82,9 @@ export function ChallengeForm({
       if (!tok.ok || !tok.path || !tok.token || !tok.bucket) {
         throw new Error(tok.error ?? "Couldn't start the upload.");
       }
+      // Deferred import keeps supabase-js out of the form's chunk; only an
+      // applicant who actually uploads a video (vs pasting a link) pays for it.
+      const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       const up = await supabase.storage
         .from(tok.bucket)
@@ -177,12 +178,12 @@ export function ChallengeForm({
           Thanks for building with us.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/dashboard">
-            <Button variant="secondary">Go to dashboard</Button>
-          </Link>
-          <Link href="/challenges">
-            <Button variant="ghost">See other challenges</Button>
-          </Link>
+          <ButtonLink href="/dashboard" variant="secondary">
+            Go to dashboard
+          </ButtonLink>
+          <ButtonLink href="/challenges" variant="ghost">
+            See other challenges
+          </ButtonLink>
         </div>
       </div>
     );

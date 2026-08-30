@@ -25,7 +25,12 @@ import { sendEmail } from "@/lib/email/send";
 import { Templates } from "@/lib/email/templates";
 import { notify } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
-import { postDiscordWebhook, syncMemberRoles } from "@/lib/discord";
+import {
+  getDiscordSettings,
+  postChannelMessage,
+  postDiscordWebhook,
+  syncMemberRoles,
+} from "@/lib/discord";
 import { cohortHasStarted, todayISO } from "@/lib/pre-cohort";
 
 /**
@@ -452,9 +457,27 @@ async function announceEnrollment(args: {
       // delivery path — webhook, retry, or reconciliation on return.
       dedupeKey: `enrolled:${args.cohortId ?? "no-cohort"}`,
     });
-    await postDiscordWebhook({
-      content: `🎉 **New enrollment** — ${profile?.full_name ?? "A new student"} just enrolled in **${args.cohortName}**!`,
-    });
+    // Trumpet the enrollment. Prefer the bot posting into the configured
+    // announcements channel and only fall back to the legacy webhook —
+    // DISCORD_ANNOUNCEMENTS_WEBHOOK is unset in production, so the
+    // webhook-only version of this made every enrollment silently
+    // vanish. Mirrors the fallback order in
+    // app/admin/announcements/actions.ts.
+    const content = `🎉 **New enrollment** — ${profile?.full_name ?? "A new student"} just enrolled in **${args.cohortName}**!`;
+    const settings = await getDiscordSettings();
+    const posted = settings.announcementsChannelId
+      ? await postChannelMessage(settings.announcementsChannelId, { content })
+      : await postDiscordWebhook({ content });
+    if (!posted) {
+      console.error(
+        "[stripe] enrollment trumpet not delivered to Discord",
+        JSON.stringify({
+          userId: args.userId,
+          cohortId: args.cohortId,
+          announcementsChannelId: settings.announcementsChannelId || null,
+        }),
+      );
+    }
   } catch (err) {
     console.error("[stripe] enrollment announce failed", err);
   }

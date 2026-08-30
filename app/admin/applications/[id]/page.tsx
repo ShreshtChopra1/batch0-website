@@ -9,7 +9,8 @@ import { ReviewThread } from "./review-thread";
 import { ReviewScorecard } from "./review-scorecard";
 import { getSiteConfig } from "@/lib/site-config";
 import { requirePermission } from "@/lib/auth";
-import { resolveReferrersByCode } from "@/lib/referrals";
+import { resolveReferrersByCode, type Referrer } from "@/lib/referrals";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { hasFounderPass } from "@/lib/founder-pass";
 import { getRebuildForUser } from "@/lib/founder-pass-perks";
 import { Share2, Hammer, ExternalLink } from "lucide-react";
@@ -50,20 +51,25 @@ export default async function AdminApplicationDetail({
 
   if (!app) notFound();
 
-  // Founder-pass context: whether this applicant holds one (gates the
-  // structured-feedback requirement in the review UI) and any seven-day rebuild
-  // they've submitted (which the reviewer should read before re-deciding).
-  const [holdsPass, rebuild] = await Promise.all([
+  // Everything below keys off the fetched application row, so it runs as one
+  // wave rather than three sequential stages.
+  const [holdsPass, rebuild, referrerByCode, duplicates] = await Promise.all([
+    // Founder-pass context: whether this applicant holds one (gates the
+    // structured-feedback requirement in the review UI) and any seven-day
+    // rebuild they've submitted (which the reviewer should read before
+    // re-deciding).
     hasFounderPass(admin, app.user_id),
     getRebuildForUser(admin, app.user_id),
+    app.referral_code
+      ? resolveReferrersByCode(admin, [app.referral_code as string])
+      : Promise.resolve(new Map<string, Referrer>()),
+    findDuplicateIdeas(admin, app),
   ]);
 
   // Name the referrer rather than showing a bare code — "a3f9k2" tells a
   // reviewer nothing about who vouched for this applicant.
   const referrer = app.referral_code
-    ? (
-        await resolveReferrersByCode(admin, [app.referral_code as string])
-      ).get(String(app.referral_code).toLowerCase()) ?? null
+    ? referrerByCode.get(String(app.referral_code).toLowerCase()) ?? null
     : null;
 
   const myReview =
@@ -71,37 +77,6 @@ export default async function AdminApplicationDetail({
   const otherSubmitted = (reviews ?? []).filter(
     (r: any) => r.reviewer_id !== viewer.id && r.submitted_at,
   );
-
-  // Duplicate detection: bigram-level overlap on startup_idea. We
-  // match on any of the top distinctive 3-grams. The gin_trgm index
-  // on applications.startup_idea (migration 0032) makes this cheap.
-  let duplicates: { id: string; full_name: string | null; startup_idea: string | null; status: string }[] = [];
-  if (app.startup_idea) {
-    const tokens: string[] = (app.startup_idea as string)
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]+/g, " ")
-      .split(/\s+/)
-      .filter((w: string) => w.length >= 4 && !STOP_WORDS.has(w))
-      .slice(0, 6);
-    if (tokens.length > 0) {
-      const orFilters = tokens.map((t: string) => `startup_idea.ilike.%${t}%`).join(",");
-      const { data } = await admin
-        .from("applications")
-        .select("id, full_name, startup_idea, status")
-        .neq("id", app.id)
-        .or(orFilters)
-        .limit(20);
-      const seenWords = new Set<string>(tokens);
-      duplicates = (data ?? [])
-        .map((row: any) => ({
-          ...row,
-          overlap: countOverlap(row.startup_idea ?? "", seenWords),
-        }))
-        .filter((row: any) => row.overlap >= 2)
-        .sort((a: any, b: any) => b.overlap - a.overlap)
-        .slice(0, 4);
-    }
-  }
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -441,6 +416,50 @@ function countOverlap(text: string, tokens: Set<string>): number {
     if (lc.includes(t)) hits += 1;
   }
   return hits;
+}
+
+/**
+ * Duplicate detection: bigram-level overlap on startup_idea. We match on any
+ * of the top distinctive 3-grams. The gin_trgm index on
+ * applications.startup_idea (migration 0032) makes this cheap.
+ */
+async function findDuplicateIdeas(
+  admin: SupabaseClient,
+  app: { id: string; startup_idea: string | null },
+): Promise<
+  {
+    id: string;
+    full_name: string | null;
+    startup_idea: string | null;
+    status: string;
+  }[]
+> {
+  if (!app.startup_idea) return [];
+  const tokens: string[] = app.startup_idea
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .split(/\s+/)
+    .filter((w: string) => w.length >= 4 && !STOP_WORDS.has(w))
+    .slice(0, 6);
+  if (tokens.length === 0) return [];
+  const orFilters = tokens
+    .map((t: string) => `startup_idea.ilike.%${t}%`)
+    .join(",");
+  const { data } = await admin
+    .from("applications")
+    .select("id, full_name, startup_idea, status")
+    .neq("id", app.id)
+    .or(orFilters)
+    .limit(20);
+  const seenWords = new Set<string>(tokens);
+  return (data ?? [])
+    .map((row: any) => ({
+      ...row,
+      overlap: countOverlap(row.startup_idea ?? "", seenWords),
+    }))
+    .filter((row: any) => row.overlap >= 2)
+    .sort((a: any, b: any) => b.overlap - a.overlap)
+    .slice(0, 4);
 }
 
 function teamSizeAdminLabel(value: number | null | undefined): string {

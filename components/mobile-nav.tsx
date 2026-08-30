@@ -320,10 +320,14 @@ export function MobileNav({
                         {g.items.map((it) => {
                           const active = it.href === activeHref;
                           const Icon = it.icon;
+                          // prefetch={false}: authed dynamic routes +
+                          // staleTimes.dynamic=0 makes prefetched payloads
+                          // throwaway work — see components/sidebar-nav.tsx.
                           return (
                             <Link
                               key={it.href}
                               href={it.href}
+                              prefetch={false}
                               aria-current={active ? "page" : undefined}
                               className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition ${
                                 active
@@ -349,6 +353,7 @@ export function MobileNav({
                       <Link
                         key={it.href}
                         href={it.href}
+                        prefetch={false}
                         className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-phosphor-ink hover:bg-phosphor/10"
                       >
                         {Icon ? <Icon className="h-4 w-4" /> : null}

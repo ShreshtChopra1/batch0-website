@@ -27,6 +27,9 @@ export default function CTA({ config }: { config: SiteConfig }) {
         <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
           {settings.applicationsOpen ? (
             <>
+              {/* href intentionally omitted — the default /home matches the
+                  hero, so a signed-in visitor doesn't get sent back to
+                  /apply by the bottom of the page they're already in. */}
               <ApplyCta label={`Apply for ${cohortLabel}`} location="final-cta" />
               <p className="text-[13px] text-ink-faint">
                 Free to apply · {derived.priceLabel} charged only if accepted

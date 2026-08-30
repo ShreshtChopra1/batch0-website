@@ -1,6 +1,7 @@
 "use server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { SITE_CONFIG_TAG } from "@/lib/site-config";
 import { assertPermission } from "@/lib/server-guards";
 import { stripe } from "@/lib/stripe";
 import { logAudit } from "@/lib/audit";
@@ -230,8 +231,16 @@ export async function saveCohort(
     });
 
     revalidatePath("/admin/cohorts");
+    // One tag covers every surface that reads the cohort/settings record —
+    // the homepage, the program page, sponsors, challenges, the legal footer
+    // and all 135 blog posts. Those are prerendered now, so without this an
+    // admin's price or date change would sit behind the cache's revalidate
+    // window on every page except the ones listed explicitly below.
+    revalidateTag(SITE_CONFIG_TAG);
     revalidatePath("/");
+    revalidatePath("/program");
     revalidatePath("/apply");
+    revalidatePath("/signup");
     revalidatePath("/opengraph-image");
 
     return { id: cohortId! };
@@ -269,11 +278,19 @@ export async function deleteCohort(id: string): Promise<ActionResult> {
       targetId: id,
     });
     revalidatePath("/admin/cohorts");
+    // One tag covers every surface that reads the cohort/settings record —
+    // the homepage, the program page, sponsors, challenges, the legal footer
+    // and all 135 blog posts. Those are prerendered now, so without this an
+    // admin's price or date change would sit behind the cache's revalidate
+    // window on every page except the ones listed explicitly below.
+    revalidateTag(SITE_CONFIG_TAG);
     revalidatePath("/admin/applications");
     revalidatePath("/admin/students");
     revalidatePath("/admin/teams");
     revalidatePath("/");
+    revalidatePath("/program");
     revalidatePath("/apply");
+    revalidatePath("/signup");
     revalidatePath("/opengraph-image");
   });
 }

@@ -4,7 +4,7 @@ description: "AI code tools let non-programmers build real apps by describing th
 date: "2026-02-26"
 updated: "2026-02-26"
 category: "Build"
-author: "taran"
+author: "shresht"
 tags: ["vibe coding", "ai app builder", "no code app", "lovable", "cursor"]
 ---
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { requirePermission } from "@/lib/auth";
 import { getAllRoles, getRoleMemberCounts, rolesTableReady } from "@/lib/roles";
 import {
@@ -43,12 +43,10 @@ export default async function AdminRolesPage() {
             changes with it — no deploy, no re-signup.
           </p>
         </div>
-        <Link href="/admin/roles/new">
-          <Button>
-            <Plus className="h-4 w-4" />
-            New role
-          </Button>
-        </Link>
+        <ButtonLink href="/admin/roles/new">
+          <Plus className="h-4 w-4 shrink-0" />
+          New role
+        </ButtonLink>
       </div>
 
       {!ready && (

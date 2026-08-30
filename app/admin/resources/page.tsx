@@ -20,13 +20,10 @@ function fmtBytes(n: number | null) {
 
 export default async function AdminResourcesPage() {
   const admin = createAdminClient();
-  const [{ data: resources }, { data: cohorts }] = await Promise.all([
-    admin
-      .from("resources")
-      .select("*, cohort:cohorts(name)")
-      .order("created_at", { ascending: false }),
-    admin.from("cohorts").select("id, name").order("starts_on"),
-  ]);
+  const { data: resources } = await admin
+    .from("resources")
+    .select("*, cohort:cohorts(name)")
+    .order("created_at", { ascending: false });
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -134,7 +131,6 @@ export default async function AdminResourcesPage() {
         Tip: leave Cohort empty to make a resource visible to every enrolled
         student, regardless of cohort.
       </p>
-      <div className="hidden">{cohorts?.length}</div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
@@ -15,6 +16,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   AUTHORS,
   CATEGORIES,
+  LEGACY_AUTHOR_KEYS,
   type AuthorKey,
   type Category,
   type PostMeta,
@@ -65,6 +67,10 @@ function assertCategory(value: string, slug: string): Category {
 
 function assertAuthor(value: string, slug: string): AuthorKey {
   if (value in AUTHORS) return value as AuthorKey;
+  // A key that was renamed rather than removed — resolve it instead of
+  // throwing, so a post written under the old key keeps rendering.
+  const aliased = LEGACY_AUTHOR_KEYS[value];
+  if (aliased) return aliased;
   throw new Error(
     `Blog post "${slug}" has unknown author "${value}". Allowed: ${Object.keys(AUTHORS).join(", ")}`,
   );
@@ -125,11 +131,31 @@ function getFilePostRaw(slug: string): string | null {
   return fs.readFileSync(file, "utf8");
 }
 
+/**
+ * Frontmatter for every committed post, parsed once per process.
+ *
+ * This used to read and gray-matter-parse all 135 files (~1.6 MB) on every
+ * call — and `getRelatedPosts` calls it on every single blog request, purely
+ * to pick three "keep reading" links. That was the dominant cost on the two
+ * worst-scoring pages in production.
+ *
+ * A module-level cache is safe here in a way it wouldn't be for DB rows: these
+ * are files committed to the repo, and the filesystem is read-only at runtime
+ * on Vercel. A new post means a new deploy, which means a new process. In dev
+ * the cache is skipped so editing a post shows up without a restart.
+ */
+let fileMetaCache: PostMeta[] | null = null;
+
 function getFilePostsMeta(): PostMeta[] {
-  return getFileSlugs().map((slug) => {
+  if (fileMetaCache && process.env.NODE_ENV === "production") {
+    return fileMetaCache;
+  }
+  const metas = getFileSlugs().map((slug) => {
     const raw = fs.readFileSync(path.join(BLOG_DIR, `${slug}.md`), "utf8");
     return parseMeta(slug, raw).meta;
   });
+  fileMetaCache = metas;
+  return metas;
 }
 
 // File-post metadata for the admin list (these are read-only in the UI — they
@@ -196,7 +222,9 @@ function blogReadClient() {
 // Fetch published DB posts. Wrapped in try/catch so the whole blog still
 // builds if the `blog_posts` table doesn't exist yet (migration not applied)
 // or Supabase is unreachable at build time — file posts always render.
-async function getPublishedRows(): Promise<BlogRow[]> {
+const getPublishedRows = cache(async function getPublishedRows(): Promise<
+  BlogRow[]
+> {
   try {
     const sb = blogReadClient();
     const { data, error } = await sb
@@ -212,7 +240,7 @@ async function getPublishedRows(): Promise<BlogRow[]> {
     console.error("[blog] blog_posts unavailable:", (e as Error).message);
     return [];
   }
-}
+});
 
 async function getPublishedRowBySlug(slug: string): Promise<BlogRow | null> {
   try {
@@ -236,7 +264,9 @@ async function getPublishedRowBySlug(slug: string): Promise<BlogRow | null> {
 
 // Metadata for every published post, newest first. Merges file + DB posts;
 // on slug collision the DB row wins.
-export async function getAllPostsMeta(): Promise<PostMeta[]> {
+export const getAllPostsMeta = cache(async function getAllPostsMeta(): Promise<
+  PostMeta[]
+> {
   const [rows, fileMetas] = await Promise.all([
     getPublishedRows(),
     Promise.resolve(getFilePostsMeta()),
@@ -245,7 +275,7 @@ export async function getAllPostsMeta(): Promise<PostMeta[]> {
   for (const m of fileMetas) bySlug.set(m.slug, m);
   for (const row of rows) bySlug.set(row.slug, rowToMeta(row)); // DB overrides
   return [...bySlug.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
-}
+});
 
 // Every renderable slug (file + published DB). Used by generateStaticParams.
 export async function getPostSlugs(): Promise<string[]> {
@@ -277,7 +307,17 @@ export async function renderMarkdown(body: string): Promise<string> {
   return String(file);
 }
 
-export async function getPostBySlug(slug: string): Promise<Post | null> {
+/**
+ * One post, rendered.
+ *
+ * React-cached because every post page resolves it twice — once in
+ * `generateMetadata`, once in the page body — and each resolution ran the
+ * whole unified markdown pipeline over the full article. The cache collapses
+ * that to one parse per request (and one per page during the static build).
+ */
+export const getPostBySlug = cache(async function getPostBySlug(
+  slug: string,
+): Promise<Post | null> {
   // DB posts override file posts on the same slug.
   const row = await getPublishedRowBySlug(slug);
   if (row) {
@@ -287,7 +327,7 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
   if (!raw) return null;
   const { meta, body } = parseMeta(slug, raw);
   return { meta, html: await renderMarkdown(body) };
-}
+});
 
 /**
  * Related posts, scored by actual topical overlap.

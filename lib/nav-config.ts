@@ -122,6 +122,12 @@ export const STUDENT_NAV: NavItem[] = STUDENT_NAV_GROUPS.flatMap(
 export const ENROLLED_ONLY_HREFS = new Set<string>([
   "/dashboard/course",
   "/dashboard/team",
+  // Matches the RLS policy exactly (migration 0027): every read path on
+  // `announcements` requires a row in `enrollments`, so an applicant who
+  // isn't enrolled can only ever be shown an empty page. The tab was
+  // visible to them anyway, which read as "the team has said nothing"
+  // rather than "this unlocks when you enroll".
+  "/dashboard/announcements",
   "/dashboard/checkin",
   "/dashboard/office-hours",
   "/dashboard/events",
@@ -151,10 +157,13 @@ export function filterStudentNavItem(
   ctx: StudentNavContext,
 ): boolean {
   if (ctx.preCohort && !PRE_COHORT_ALLOWED_HREFS.has(item.href)) return false;
-  // Kickoff only exists during the pre-cohort window, and only once the
-  // seat is paid for — the page redirects home for everyone else.
+  // Kickoff belongs to an enrolled student for the whole life of the cohort:
+  // a countdown before day one, the record of day one afterwards. It used to
+  // vanish the moment the cohort started, which turned every bookmark and
+  // every link in a welcome email into a silent redirect home. Staff resolve
+  // as enrolled (lib/access.ts) so they can preview the page they edit.
   if (item.href === "/dashboard/kickoff") {
-    return ctx.preCohort && ctx.enrolled;
+    return ctx.enrolled;
   }
   if (item.href === "/dashboard/ai") return ctx.aiAccess;
   if (item.href === "/dashboard/community") return ctx.discordEnabled;

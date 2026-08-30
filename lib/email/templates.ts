@@ -6,6 +6,8 @@ function layout(args: {
   preheader?: string;
   body: string;
   cta?: { url: string; label: string };
+  /** Small print rendered *after* the CTA. */
+  footNote?: string;
 }) {
   const cta = args.cta
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:32px 0">
@@ -36,6 +38,11 @@ ${preheader}
       <tr><td style="padding:0 32px 32px 32px;font-size:15px;line-height:1.55;color:#e7e7e7">
         ${args.body}
         ${cta}
+        ${
+          args.footNote
+            ? `<div style="font-size:12px;line-height:1.6;color:#888;word-break:break-all">${args.footNote}</div>`
+            : ""
+        }
       </td></tr>
       <tr><td style="padding:18px 32px;border-top:1px solid rgba(255,255,255,0.06);font-size:12px;color:#888">
         <a href="${env.siteUrl}" style="color:#ffbb00;text-decoration:none">${env.siteUrl.replace(/^https?:\/\//, "")}</a> · Questions?
@@ -79,6 +86,45 @@ export const Templates = {
         .join(""),
       cta: args.cta ?? undefined,
     }),
+  }),
+
+  /**
+   * Password reset. The link is a one-time recovery token minted by
+   * `auth.admin.generateLink` and pointed at our own /auth/confirm route —
+   * see app/(auth)/forgot-password/actions.ts. Supabase's built-in mailer is
+   * deliberately not used: it sends an unbranded message from a Supabase
+   * address, and its free-tier limit (a couple of emails an hour, project-
+   * wide) means most reset requests silently never arrive.
+   *
+   * The URL is printed in full underneath the button because reset mail is
+   * the one email people open in a client that strips buttons, and a reset
+   * they can't complete is a locked-out user emailing support.
+   */
+  passwordReset: (args: { url: string; expiresInMinutes?: number }) => ({
+    subject: "Reset your batch0 password",
+    html: layout({
+      preheader: "A link to set a new password. Expires in an hour.",
+      body: `
+        <h1 style="margin:0 0 12px 0;font-size:22px;color:#fff">Reset your password</h1>
+        <p>Use the link below to set a new password for your batch0 account. It works once and expires in ${
+          args.expiresInMinutes ?? 60
+        } minutes.</p>
+        <p style="color:#888">If you didn't ask for this, you can ignore this email — your password won't change until someone opens the link.</p>
+      `,
+      cta: { url: args.url, label: "Set a new password" },
+      footNote: `Button not working? Paste this into your browser:<br><a href="${args.url}" style="color:#ffbb00;text-decoration:none">${args.url}</a>`,
+    }),
+    text: `Reset your batch0 password
+
+Open this link to set a new password. It works once and expires in ${
+      args.expiresInMinutes ?? 60
+    } minutes:
+
+${args.url}
+
+If you didn't ask for this, ignore this email — your password won't change until someone opens the link.
+
+${env.siteUrl}`,
   }),
 
   welcome: (args: { name?: string | null }) => ({

@@ -1,21 +1,32 @@
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { passHolderUserIds } from "@/lib/founder-pass";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { FounderPassBadge } from "@/components/founder-pass-badge";
 
 type Props = { params: { slug: string } };
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+// One lookup shared by generateMetadata and the page body — React cache()
+// dedupes it within the request, so a view costs one round trip instead of
+// two. Selects the union of the columns both callers read.
+const getTeamBySlug = cache(async (slug: string) => {
   const admin = createAdminClient();
-  const { data: team } = await admin
+  const { data } = await admin
     .from("teams")
-    .select("name, tagline, public_blurb, is_public, demo_video_url, logo_url, logo_status")
-    .ilike("slug", params.slug)
+    .select(
+      "id, name, slug, tagline, description, public_blurb, demo_video_url, pitch_video_url, website_url, logo_url, logo_status, is_public, demo_day_recap, raised_cents, post_money_cents, lead_investor, round_kind, cohort:cohorts(name, slug)",
+    )
+    .ilike("slug", slug)
     .maybeSingle();
+  return data;
+});
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const team = await getTeamBySlug(params.slug);
   if (!team || !team.is_public) return { title: "Team · batch0" };
   const desc =
     team.tagline ??
@@ -33,16 +44,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function PublicTeamPage({ params }: Props) {
-  const admin = createAdminClient();
-  const { data: team } = await admin
-    .from("teams")
-    .select(
-      "id, name, slug, tagline, description, public_blurb, demo_video_url, pitch_video_url, website_url, logo_url, logo_status, is_public, demo_day_recap, raised_cents, post_money_cents, lead_investor, round_kind, cohort:cohorts(name, slug)",
-    )
-    .ilike("slug", params.slug)
-    .maybeSingle();
+  const team = await getTeamBySlug(params.slug);
   if (!team || !team.is_public) notFound();
 
+  const admin = createAdminClient();
   const [{ data: members }, { count: backers }, passHolders] = await Promise.all([
     admin
       .from("team_members")
@@ -190,9 +195,9 @@ export default async function PublicTeamPage({ params }: Props) {
           the team through batch0.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href={`/investor?team=${team.slug}`}>
-            <Button>Join as investor →</Button>
-          </Link>
+          <ButtonLink href={`/investor?team=${team.slug}`}>
+            Join as investor →
+          </ButtonLink>
           {team.website_url && (
             <a
               href={team.website_url}

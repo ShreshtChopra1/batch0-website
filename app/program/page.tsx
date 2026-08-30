@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Navbar from "@/components/navbar";
 import Footer from "@/components/footer";
 import { Ledger } from "@/components/ledger";
 import { ApplyCta } from "@/components/apply-cta";
 import { WEEKS } from "@/components/curriculum";
-import { getSiteConfig, FALLBACK_COHORT } from "@/lib/site-config";
-import { getCountryFromHeaders } from "@/lib/pricing";
-import { getProfile, roleHome } from "@/lib/auth";
+import { getPublicSiteConfig, FALLBACK_COHORT } from "@/lib/site-config";
+import { RegionalPrice } from "@/components/regional-price";
 import {
   SITE,
   ORG_ID,
@@ -27,7 +25,7 @@ const PROGRAM_TITLE = "Program: Four Sprints to Demo Day — batch0";
 // mid-clause before it ever reached "demo day". Leading with the dates keeps
 // the useful half inside the ~155-character budget.
 export async function generateMetadata(): Promise<Metadata> {
-  const { derived } = await getSiteConfig({ countryCode: null });
+  const { derived } = await getPublicSiteConfig({ countryCode: null });
   const when = derived.dateRangeSentence
     ? ` ${derived.cohortLabel || "Next cohort"}: ${derived.dateRangeSentence}.`
     : "";
@@ -77,13 +75,18 @@ const DETAIL: Record<string, string[]> = {
   ],
 };
 
+// Prerendered with ISR, same shape as the homepage: the server renders the
+// base price and <RegionalPrice> swaps the label client-side for visitors
+// whose clock says India — the geo header this page used to read served
+// exactly that one override. Admin edits revalidate SITE_CONFIG_TAG and
+// this path directly; 300s is only the fallback horizon.
+export const revalidate = 300;
+
 export default async function ProgramPage() {
-  const countryCode = getCountryFromHeaders(headers());
-  const [config, profile] = await Promise.all([
-    getSiteConfig({ countryCode }),
-    getProfile(),
+  const [config, regionalConfig] = await Promise.all([
+    getPublicSiteConfig({ countryCode: null }),
+    getPublicSiteConfig({ countryCode: "IN" }),
   ]);
-  const authedHome = profile ? await roleHome(profile.role) : null;
   const { derived } = config;
   const cohortLabel = derived.cohortLabel || "the next cohort";
 
@@ -196,11 +199,13 @@ export default async function ProgramPage() {
   };
 
   return (
-    <main className="min-h-screen bg-paper">
-      <Navbar
-        authedHome={authedHome}
-        cohortLabel={derived.cohortLabel || "the next cohort"}
-      />
+    // <div> outside, <main> around the content only — a <main> containing the
+    // navbar and footer suppresses their banner/contentinfo landmarks and
+    // makes "Skip to content" land above the nav. No layout classes on the
+    // inner <main>, so nothing shifts.
+    <div className="min-h-screen bg-paper">
+      <Navbar cohortLabel={derived.cohortLabel || "the next cohort"} />
+      <main id="main-content" tabIndex={-1}>
 
       <section className="px-5 pb-16 pt-14 sm:px-6 sm:pt-20 md:pb-20 md:pt-24">
         <div className="mx-auto grid max-w-[1100px] gap-12 md:grid-cols-12 md:gap-8">
@@ -307,10 +312,14 @@ export default async function ProgramPage() {
         </div>
       </section>
 
+      </main>
       <Footer config={config} />
-
+      <RegionalPrice
+        base={config.derived.priceLabel}
+        regional={regionalConfig.derived.priceLabel}
+      />
       <JsonLd data={courseJsonLd} />
       <JsonLd data={breadcrumbJsonLd([{ name: "Program", path: "/program" }])} />
-    </main>
+    </div>
   );
 }

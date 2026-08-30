@@ -53,7 +53,10 @@ export function RoleSidebar({
       <SidebarNav storageKey={`role-${kind}`} groups={groups} />
       {showAdminBack && (
         <div className="mt-4 space-y-0.5 border-t border-line pt-4">
-          <Link href="/admin" className={SIDEBAR_ROW}>
+          {/* prefetch={false}: authed dynamic route + staleTimes.dynamic=0
+              makes prefetched payloads throwaway work — see
+              components/sidebar-nav.tsx. */}
+          <Link href="/admin" prefetch={false} className={SIDEBAR_ROW}>
             <ShieldCheck className="h-4 w-4" />
             Admin panel
           </Link>

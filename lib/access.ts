@@ -1,6 +1,10 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+// Safe to import: lib/auth never imports this module, so no cycle. The shared
+// getUser() keeps the whole request at one auth round trip however many
+// access helpers run.
+import { getUser } from "@/lib/auth";
 import { capabilitiesForRole } from "@/lib/roles";
 import { can, canAccessAdmin } from "@/lib/permissions";
 import type { Role, ApplicationStatus } from "@/lib/types";
@@ -30,11 +34,9 @@ async function isStaffPreview(role?: Role | null): Promise<boolean> {
  */
 export async function isEnrolled(role?: Role | null): Promise<boolean> {
   if (await isStaffPreview(role)) return true;
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getUser();
   if (!user) return false;
+  const supabase = createClient();
   const { data } = await supabase
     .from("enrollments")
     .select("id")
@@ -73,6 +75,16 @@ export type StudentAccess = {
   cohortStartsOn: string | null;
   /** Name of that cohort, when pre-cohort. */
   cohortName: string | null;
+  /**
+   * The cohort this student is currently tied to — the soonest not-yet-started
+   * one, or the most recently started one when they're all underway. Unlike
+   * `cohortStartsOn` / `cohortName` above (which stay pre-cohort-only, because
+   * callers branch on them meaning "pre-cohort"), this is resolved whatever
+   * the lifecycle stage, so a page like /dashboard/kickoff can look up cohort
+   * content at any point in the program. Null for staff and for a student
+   * with no cohort assigned yet.
+   */
+  cohortId: string | null;
 };
 
 const NO_PRE_COHORT = {
@@ -83,11 +95,55 @@ const NO_PRE_COHORT = {
 
 type NamedCohort = PreCohortCohort & { name: string | null };
 
+/** Soonest start date first; dateless cohorts sort last. */
+function byStartDate(a: PreCohortCohort, b: PreCohortCohort): number {
+  return (a.starts_on ?? "9999-12-31") < (b.starts_on ?? "9999-12-31") ? -1 : 1;
+}
+
 /** Supabase embeds to-one relations as object or single-element array. */
 function embeddedCohort(c: unknown): NamedCohort | null {
   const cohort = Array.isArray(c) ? c[0] : c;
   return (cohort as NamedCohort) ?? null;
 }
+
+/**
+ * The two user-keyed reads behind getStudentAccess, on their own.
+ *
+ * Split out because they depend only on the signed-in user, never on `role` —
+ * while getStudentAccess as a whole cannot start until the caller has resolved
+ * a role, which in the dashboard layout means waiting on getViewer() first.
+ * That ordering made these queries a third serial wave in a render that has
+ * nothing to show until it finishes: `loading.tsx` lives inside the layout's
+ * boundary, so the user watches a blank frame for the duration.
+ *
+ * Exported so the layout can start it in the same parallel batch as
+ * getViewer(). By the time getStudentAccess() runs, this is already resolved
+ * and returns from cache.
+ *
+ * The zero arity is load-bearing. React's cache() keys on arguments, so adding
+ * a parameter here would make the layout's speculative call and
+ * getStudentAccess's call two different entries — two round trips instead of
+ * none.
+ */
+export const loadAccessRows = cache(async function loadAccessRows() {
+  const user = await getUser();
+  if (!user) return null;
+  const admin = createAdminClient();
+  const [{ data: enrollments }, { data: app }] = await Promise.all([
+    admin
+      .from("enrollments")
+      .select("cohort_id, cohort:cohorts(name, starts_on, status)")
+      .eq("user_id", user.id),
+    admin
+      .from("applications")
+      .select("status, cohort_id, cohort:cohorts(name, starts_on, status)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  return { enrollments, app };
+});
 
 /**
  * Request-cached (React cache): the dashboard layout and the rendered
@@ -103,36 +159,22 @@ export const getStudentAccess = cache(async function getStudentAccess(
       applicationStatus: null,
       role,
       staff: true,
+      cohortId: null,
       ...NO_PRE_COHORT,
     };
   }
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const rows = await loadAccessRows();
+  if (!rows) {
     return {
       enrolled: false,
       applicationStatus: null,
       role,
       staff: false,
+      cohortId: null,
       ...NO_PRE_COHORT,
     };
   }
-  const admin = createAdminClient();
-  const [{ data: enrollments }, { data: app }] = await Promise.all([
-    admin
-      .from("enrollments")
-      .select("cohort_id, cohort:cohorts(name, starts_on, status)")
-      .eq("user_id", user.id),
-    admin
-      .from("applications")
-      .select("status, cohort_id, cohort:cohorts(name, starts_on, status)")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  const { enrollments, app } = rows;
   const enrolled = (enrollments?.length ?? 0) > 0;
   const applicationStatus = (app?.status as ApplicationStatus) ?? null;
   const accepted = isAcceptedStatus(applicationStatus);
@@ -140,6 +182,7 @@ export const getStudentAccess = cache(async function getStudentAccess(
   let preCohort = false;
   let cohortStartsOn: string | null = null;
   let cohortName: string | null = null;
+  let cohortId: string | null = null;
   if (enrolled || accepted) {
     // Every cohort the student is tied to: all enrollments + the accepted
     // application's cohort. Deduped by id; the embeds ride along on the
@@ -153,17 +196,27 @@ export const getStudentAccess = cache(async function getStudentAccess(
       const c = embeddedCohort(app.cohort);
       if (c) byId.set(app.cohort_id, c);
     }
-    const cohorts = Array.from(byId.values());
+    const entries = Array.from(byId.entries());
+    const cohorts = entries.map(([, c]) => c);
     const today = todayISO();
     preCohort = computePreCohort(true, cohorts, today);
+
+    // The one cohort that represents "where this student is". Prefer the
+    // soonest one still ahead of them; once everything has started, the most
+    // recently started one is the cohort they're actually living in.
+    const upcoming = entries
+      .filter(([, c]) => !cohortHasStarted(c, today))
+      .sort(([, a], [, b]) => byStartDate(a, b))[0];
+    const current =
+      upcoming ??
+      entries
+        .filter(([, c]) => cohortHasStarted(c, today))
+        .sort(([, a], [, b]) => byStartDate(b, a))[0];
+    cohortId = current?.[0] ?? null;
+
     if (preCohort) {
-      const upcoming = cohorts
-        .filter((c) => !cohortHasStarted(c, today))
-        .sort((a, b) =>
-          (a.starts_on ?? "9999-12-31") < (b.starts_on ?? "9999-12-31") ? -1 : 1,
-        )[0];
-      cohortStartsOn = upcoming?.starts_on ?? null;
-      cohortName = upcoming?.name ?? null;
+      cohortStartsOn = upcoming?.[1]?.starts_on ?? null;
+      cohortName = upcoming?.[1]?.name ?? null;
     }
   }
 
@@ -175,6 +228,7 @@ export const getStudentAccess = cache(async function getStudentAccess(
     preCohort,
     cohortStartsOn,
     cohortName,
+    cohortId,
   };
 });
 

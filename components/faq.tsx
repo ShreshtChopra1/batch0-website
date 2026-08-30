@@ -21,7 +21,7 @@ export default function FAQ({ config }: { config: SiteConfig }) {
     },
     {
       q: "Who runs batch0?",
-      a: `Rishabh Dagli and Taran Bethi — two 17-year-old founders who build and ship their own projects, including batch0 itself. They personally review every application, run every live session, and coordinate mentor and investor relationships for students. This is the founding cohort: no borrowed credentials, no invented track record.`,
+      a: `Rishabh Dagli and Shresht Chopra — two 17-year-old founders who build and ship their own projects, including batch0 itself. They personally review every application, run every live session, and coordinate mentor and investor relationships for students. This is the founding cohort: no borrowed credentials, no invented track record.`,
     },
     {
       q: "Who is it for?",
@@ -37,7 +37,7 @@ export default function FAQ({ config }: { config: SiteConfig }) {
     },
     {
       q: "Who are the mentors?",
-      a: `Cohort 1 is taught end-to-end by Rishabh and Taran — every person involved is named on this site before you pay, and we won't pad the roster. Guest mentors and investors join around demo day; admitted students get their names before the cohort starts, and nobody interacts with students outside moderated program spaces.`,
+      a: `Cohort 1 is taught end-to-end by Rishabh and Shresht — every person involved is named on this site before you pay, and we won't pad the roster. Guest mentors and investors join around demo day; admitted students get their names before the cohort starts, and nobody interacts with students outside moderated program spaces.`,
     },
     {
       q: "How is the community moderated?",

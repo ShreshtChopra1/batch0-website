@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getViewer } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { getStudentAccess, aiAccessFrom } from "@/lib/access";
+import { getStudentAccess, aiAccessFrom, loadAccessRows } from "@/lib/access";
 import { isDiscordEnabled } from "@/lib/discord";
 import { StudentSidebar } from "@/components/dashboard/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
@@ -12,7 +12,22 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const viewer = await getViewer();
+  // The Discord flag and site config depend on nothing the viewer resolves,
+  // so they ride alongside it instead of waiting behind the auth round trip.
+  // Both are request-cached, so pages that read them again dedupe.
+  // loadAccessRows() rides along even though the access check below needs a
+  // role this batch hasn't produced yet: the rows themselves are keyed only on
+  // the user, so speculating on them here turns what was a third serial wave
+  // into part of this one. getStudentAccess() then reads it back from the
+  // request cache. Staff previewing the student view short-circuit before
+  // using the rows, so for them this is two parallel reads they didn't
+  // strictly need — cheap, and they are not the common case.
+  const [viewer, discordEnabled, siteConfig] = await Promise.all([
+    getViewer(),
+    isDiscordEnabled(),
+    getSiteConfig(),
+    loadAccessRows(),
+  ]);
   if (!viewer) redirect("/login");
   const { profile, caps } = viewer;
   // Theme driven site-wide by next-themes on <html> (see ThemeProvider).
@@ -24,7 +39,7 @@ export default async function DashboardLayout({
   if (!can(caps, "student.dashboard")) {
     return (
       <div className="min-h-screen bg-paper text-ink">
-        <main className="px-5 py-6 md:px-10 md:py-10">{children}</main>
+        <main id="main-content" tabIndex={-1} className="px-5 py-6 md:px-10 md:py-10">{children}</main>
       </div>
     );
   }
@@ -36,11 +51,7 @@ export default async function DashboardLayout({
   // cohort hasn't started yet (preCohort) get the personal pages +
   // Community, plus Kickoff, Resources, and Team once enrolled. Admins
   // always see everything so they can preview the full student view.
-  const [access, discordEnabled, siteConfig] = await Promise.all([
-    getStudentAccess(profile.role),
-    isDiscordEnabled(),
-    getSiteConfig(),
-  ]);
+  const access = await getStudentAccess(profile.role);
   const enrolled = access.enrolled;
   const preCohort = access.preCohort;
   const aiAccess = aiAccessFrom(access);
@@ -70,7 +81,7 @@ export default async function DashboardLayout({
           referralsEnabled={referralsEnabled}
           preCohort={preCohort}
         />
-        <main className="flex-1 px-5 py-6 md:px-10 md:py-10">{children}</main>
+        <main id="main-content" tabIndex={-1} className="flex-1 px-5 py-6 md:px-10 md:py-10">{children}</main>
       </div>
     </div>
   );

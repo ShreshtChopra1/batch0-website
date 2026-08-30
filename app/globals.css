@@ -58,8 +58,66 @@
   --foreground: #141414;
 }
 
+/* Arrow glyphs, repaired.
+ *
+ * next/font subsets IBM Plex Mono and VT323 to a latin `unicode-range` that
+ * carries U+2191/U+2193 (↑↓) but NOT U+2192/U+2190 (→←). So every arrow on
+ * the site — 98 of them, from "View all →" to the "← Back" links — missed
+ * both webfonts and landed on the generated metric-override fallback
+ * (`local("Arial")` at `size-adjust: 134.59%`). Measured at font-size 100px:
+ * every real Plex Mono glyph advances 60px, while → and ← advanced 134.59px.
+ * A proportional Arial arrow, 35% too wide, wrong baseline, wrong weight,
+ * sitting inside monospace text.
+ *
+ * This face claims ONLY the arrows block, and goes FIRST in the stacks in
+ * tailwind.config.ts. Font matching is per-character: every other codepoint
+ * finds nothing here and falls through to Plex Mono exactly as before, while
+ * → and ← match here and render from a real monospace face at natural width.
+ * `local()` only — no network cost, nothing to subset. If none of these are
+ * installed the character falls through to the old behaviour, so the worst
+ * case is today's rendering rather than a regression. */
+@font-face {
+  font-family: "Arrow Fallback";
+  /* PostScript / full names, NOT family names — Chrome's `local()` does not
+   * match on family, so `local("Menlo")` silently resolves to nothing while
+   * `local("Menlo-Regular")` resolves. Verified in-browser, one face at a
+   * time, by loading each name and measuring the → it produced:
+   *   Menlo          -> fail          Menlo-Regular    -> 60.21px
+   *   Consolas       -> (not on mac)  Monaco           -> 60.02px
+   *   Andale Mono    -> 60.02px       CourierNewPSMT   -> 60.02px
+   * Ordered mac → Windows → Linux → universal. Every entry is monospace and
+   * carries U+2190-21FF, so whichever one wins, the arrow lands on the same
+   * 60px advance as the surrounding IBM Plex Mono text. */
+  src: local("Menlo-Regular"), local("Monaco"), local("Consolas"),
+    local("DejaVuSansMono"), local("DejaVu Sans Mono"), local("LiberationMono"),
+    local("Liberation Mono"), local("CourierNewPSMT"), local("Courier New");
+  /* Exactly the codepoints Plex Mono's subset is missing, and no more.
+   * U+2191/U+2193 (↑↓) ARE in the subset and render correctly at 60px, so
+   * they are deliberately excluded here — widening this to U+2190-21FF pulls
+   * them onto Menlo too and makes two glyphs that were fine slightly
+   * inconsistent with the text around them. */
+  unicode-range: U+2190, U+2192, U+27F5-27F6;
+  font-display: swap;
+}
+
 * {
   box-sizing: border-box;
+}
+
+html {
+  /* The marketing navbar is sticky at 57px — without this, every in-page
+   * anchor (/#faq from the navbar and the footer, /#who-runs-this) lands
+   * with its heading tucked underneath it. */
+  scroll-padding-top: 5rem;
+  /* Deliberately NOT `scroll-behavior: smooth`. It used to be set here and
+   * on <body>, and it silently broke fragment navigation outright: loading
+   * /#faq, or clicking the navbar's FAQ link, left the page at scrollY 0
+   * instead of the target. The homepage is ~5000px with staggered
+   * entrance animations, and the smooth scroll Chrome starts for a
+   * fragment gets cancelled before it arrives. Measured: `smooth` -> 0px,
+   * `auto` -> the correct 3244px. A jump that works beats a glide that
+   * doesn't. */
+  scroll-behavior: auto;
 }
 
 html,
@@ -68,7 +126,6 @@ body {
   color: var(--foreground);
   font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
-  scroll-behavior: smooth;
   /* No horizontal scroll on small screens. Any layout that genuinely
    * needs it should scope its own inner overflow-x container.
    *
@@ -106,7 +163,13 @@ body {
   *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
+    /* Zeroing the duration alone is not enough: an animation with a delay and
+     * `fill-mode: both` still holds its 0% frame for the length of the delay.
+     * The hero staggers up to 280ms that way, so a reader who asked for no
+     * motion would sit and watch invisible text appear in sequence anyway. */
+    animation-delay: 0ms !important;
     transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
   }
 }
 
@@ -193,6 +256,24 @@ a,
   color: #141414;
 }
 
+/* Auth-conditional chrome. The inline script in app/layout.tsx stamps
+ * `data-authed` on <html> before first paint (lib/auth-flag.ts), so both
+ * labels ship in the static HTML and CSS picks one — no React state, no
+ * hydration mismatch, and the element is sized by the string it actually
+ * shows rather than by the longer of the two. `display: none` (not
+ * `visibility: hidden`) is the point: a signed-in visitor must not see a
+ * "Dashboard" button padded out to the width of "Apply for Cohort 1", or a
+ * phantom gap where the "Log in" link used to be. */
+.when-authed {
+  display: none;
+}
+[data-authed] .when-authed {
+  display: revert;
+}
+[data-authed] .when-anon {
+  display: none;
+}
+
 /* ============================================================================
  * Marketing surface (DESIGN.md)
  * ============================================================================ */
@@ -200,7 +281,7 @@ a,
 /* The Cohort Ledger — the signature element. Mono rows with dotted
  * leaders, every value rendered from live site-config. */
 .ledger {
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: "Arrow Fallback", var(--font-mono), ui-monospace, monospace;
   font-size: 0.8125rem;
   line-height: 1.5;
 }
@@ -403,7 +484,8 @@ a,
 .blog-prose h3,
 .blog-prose h4 {
   color: rgb(var(--ink));
-  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-family: "Arrow Fallback", var(--font-display), ui-sans-serif, system-ui,
+    sans-serif;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
@@ -485,7 +567,7 @@ a,
   position: absolute;
   left: 0;
   top: 0;
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: "Arrow Fallback", var(--font-mono), ui-monospace, monospace;
   font-size: 0.85em;
   font-weight: 500;
   color: rgb(var(--phosphor-ink));
@@ -507,7 +589,7 @@ a,
   color: rgb(var(--ink));
 }
 .blog-prose code {
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: "Arrow Fallback", var(--font-mono), ui-monospace, monospace;
   font-size: 0.9em;
   background: rgb(var(--wash));
   border: 1px solid rgb(var(--line));
@@ -543,7 +625,7 @@ a,
 }
 .blog-prose thead th {
   text-align: left;
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: "Arrow Fallback", var(--font-mono), ui-monospace, monospace;
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
