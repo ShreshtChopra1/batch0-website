@@ -11,6 +11,8 @@ import {
   isDiscordEnabled,
   listRegisteredCommands,
   fetchGuildMemberCount,
+  fetchOauthRedirectUris,
+  expectedOauthRedirectUris,
   SLASH_COMMANDS,
 } from "@/lib/discord";
 import { env } from "@/lib/env";
@@ -50,6 +52,7 @@ export default async function AdminDiscordPage() {
     memberCount,
     { data: meRow },
     doctor,
+    registeredRedirects,
   ] = await Promise.all([
     admin
       .from("site_settings")
@@ -70,6 +73,7 @@ export default async function AdminDiscordPage() {
       console.error("[discord] doctor failed", err);
       return null;
     }),
+    fetchOauthRedirectUris(),
   ]);
 
   const initial: DiscordConfigInput = {
@@ -138,6 +142,17 @@ export default async function AdminDiscordPage() {
 
   const hasBot = Boolean(env.discordBotToken);
   const hasOauth = Boolean(env.discordClientId && env.discordClientSecret);
+  // /auth/discord/start builds the redirect from the REQUEST origin, so apex
+  // and www each produce their own URI and both must be registered.
+  const expectedRedirects = expectedOauthRedirectUris(env.siteUrl);
+  const missingRedirects =
+    registeredRedirects === null
+      ? []
+      : expectedRedirects.filter((u) => !registeredRedirects.includes(u));
+  const redirectsOk =
+    expectedRedirects.length > 0 &&
+    registeredRedirects !== null &&
+    missingRedirects.length === 0;
   const hasInteractions = Boolean(env.discordPublicKey);
   const guildId = env.discordGuildId;
 
@@ -229,6 +244,24 @@ export default async function AdminDiscordPage() {
               hasOauth
                 ? "Account-linking enabled."
                 : "Without these, users can't link Discord accounts."
+            }
+          />
+          {/*
+            Discord rejects an unregistered redirect on its own domain, before
+            the browser returns — /auth/discord/callback never runs, so this is
+            the only place the failure can be surfaced.
+          */}
+          <Status
+            ok={redirectsOk}
+            label="OAuth redirect URIs registered with Discord"
+            hint={
+              expectedRedirects.length === 0
+                ? "NEXT_PUBLIC_SITE_URL is malformed, so the callback URL can't be derived."
+                : registeredRedirects === null
+                  ? `Couldn't read the allow-list. Ensure OAuth2 → Redirects contains: ${expectedRedirects.join(", ")}`
+                  : missingRedirects.length === 0
+                    ? `All ${expectedRedirects.length} registered.`
+                    : `MISSING: ${missingRedirects.join(", ")} — add under OAuth2 → Redirects in the Discord developer portal, or linking fails with "Invalid OAuth2 redirect_uri".`
             }
           />
           <Status

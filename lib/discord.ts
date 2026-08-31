@@ -369,6 +369,54 @@ export async function fetchGuildMemberCount(): Promise<number | null> {
   }
 }
 
+/**
+ * The OAuth2 redirect URIs registered on the Discord application.
+ *
+ * Exists because "Invalid OAuth2 redirect_uri" is a dead end for whoever hits
+ * it: Discord rejects on its own domain, before the browser ever comes back,
+ * so /auth/discord/callback never runs and nothing on our side can catch or
+ * explain it. The only place it can be caught is the admin side, ahead of time.
+ *
+ * Null when the list can't be read — the caller degrades to printing the URIs
+ * that need registering, which is still the actionable half.
+ */
+export async function fetchOauthRedirectUris(): Promise<string[] | null> {
+  if (!env.discordBotToken) return null;
+  try {
+    const res = await fetch(`${API}/applications/@me`, {
+      headers: { Authorization: `Bot ${env.discordBotToken}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { redirect_uris?: unknown };
+    return Array.isArray(json.redirect_uris)
+      ? json.redirect_uris.filter((u): u is string => typeof u === "string")
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every redirect URI the app can legitimately send. /auth/discord/start
+ * derives it from the REQUEST origin, so a visitor on www produces a different
+ * URI than one on the apex — both must be registered or linking dies for half
+ * the users.
+ */
+export function expectedOauthRedirectUris(siteUrl: string): string[] {
+  const out = new Set<string>();
+  try {
+    const url = new URL(siteUrl);
+    const apex = url.host.replace(/^www\./, "");
+    for (const host of [apex, `www.${apex}`]) {
+      out.add(`${url.protocol}//${host}/auth/discord/callback`);
+    }
+  } catch {
+    /* a malformed NEXT_PUBLIC_SITE_URL shouldn't take the doctor down */
+  }
+  return [...out];
+}
+
 export async function addRoleToMember(
   discordUserId: string,
   roleId: string,

@@ -6,7 +6,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { assertPermission } from "@/lib/server-guards";
 import { logAudit } from "@/lib/audit";
 import { sanitizeEmailHtml } from "@/lib/email/sanitize";
-import { renderTemplate, renderAdHoc } from "@/lib/email/render";
+import {
+  renderTemplate,
+  renderAdHoc,
+  renderBodyFragment,
+} from "@/lib/email/render";
 import { sendEmail, sendEmailBatch } from "@/lib/email/send";
 import { getTemplateById, toStoredTemplate } from "@/lib/email/store";
 import type { StoredTemplate } from "@/lib/email/render";
@@ -151,15 +155,6 @@ async function renderFor(
   });
 }
 
-/** The sanitized body plus the CTA, as one editable fragment. */
-function composeBodyFragment(draft: ComposeDraft): string {
-  const body = sanitizeEmailHtml(draft.bodyHtml ?? "");
-  const label = draft.ctaLabel.trim();
-  const url = draft.ctaUrl.trim();
-  if (!label || !url) return body;
-  return `${body}<p><a href="${url}">${label}</a></p>`;
-}
-
 async function loadStored(id: string): Promise<StoredTemplate | null> {
   const tpl = await getTemplateById(id);
   return tpl ? toStoredTemplate(tpl) : null;
@@ -296,7 +291,18 @@ export async function sendCompose(draft: ComposeDraft): Promise<ComposeResult> {
         subjectOverride: draft.templateId ? null : draft.subject.trim(),
         htmlOverride: draft.templateId
           ? null
-          : composeBodyFragment(draft),
+          : // The same fragment builder the template path uses, so both
+            // writers of this storage contract apply the same URL rules.
+            // Hand-rolling it here put the raw draft URL straight into an href.
+            renderBodyFragment({
+              key: "__adhoc__",
+              subject: draft.subject,
+              preheader: null,
+              body_html: draft.bodyHtml,
+              cta_label: draft.ctaLabel.trim() || null,
+              cta_url: draft.ctaUrl.trim() || null,
+              variables: [],
+            }),
       });
       if (id) queued++;
     }
