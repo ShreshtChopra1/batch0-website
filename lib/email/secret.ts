@@ -83,10 +83,3 @@ export function decryptSecret(payload: string | null | undefined): string | null
     return null;
   }
 }
-
-/** "abcd••••••••wxyz" — enough to recognise, not enough to reuse. */
-export function maskSecret(plain: string | null): string | null {
-  if (!plain) return null;
-  if (plain.length <= 8) return "•".repeat(plain.length);
-  return `${plain.slice(0, 2)}${"•".repeat(Math.min(plain.length - 4, 12))}${plain.slice(-2)}`;
-}

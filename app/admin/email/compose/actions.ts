@@ -9,6 +9,7 @@ import { sanitizeEmailHtml } from "@/lib/email/sanitize";
 import { renderTemplate, renderAdHoc } from "@/lib/email/render";
 import { sendEmail, sendEmailBatch } from "@/lib/email/send";
 import { getTemplateById, toStoredTemplate } from "@/lib/email/store";
+import type { StoredTemplate } from "@/lib/email/render";
 import { baseVariables, enqueueEmail } from "@/lib/email/dispatch";
 import { resolveAudience, audienceAddresses, MAX_AUDIENCE } from "@/lib/email/audience";
 import { isAudienceSegment } from "@/lib/email/catalog";
@@ -126,12 +127,18 @@ async function resolveRecipients(
 async function renderFor(
   draft: ComposeDraft,
   person: { email: string; name: string | null },
+  /**
+   * Pre-fetched template. Without it this fetched the same row once per
+   * recipient — a 1000-address send issued 1000 identical SELECTs before a
+   * single email left.
+   */
+  preloaded?: StoredTemplate | null,
 ) {
   const vars = baseVariables({ email: person.email, name: person.name });
   if (draft.templateId) {
-    const tpl = await getTemplateById(draft.templateId);
-    if (!tpl) return null;
-    return renderTemplate(toStoredTemplate(tpl), vars);
+    const stored = preloaded ?? (await loadStored(draft.templateId));
+    if (!stored) return null;
+    return renderTemplate(stored, vars);
   }
   return renderAdHoc({
     subject: draft.subject,
@@ -151,6 +158,11 @@ function composeBodyFragment(draft: ComposeDraft): string {
   const url = draft.ctaUrl.trim();
   if (!label || !url) return body;
   return `${body}<p><a href="${url}">${label}</a></p>`;
+}
+
+async function loadStored(id: string): Promise<StoredTemplate | null> {
+  const tpl = await getTemplateById(id);
+  return tpl ? toStoredTemplate(tpl) : null;
 }
 
 function validateDraft(draft: ComposeDraft): { ok: true } | { ok: false; error: string } {
@@ -313,8 +325,12 @@ export async function sendCompose(draft: ComposeDraft): Promise<ComposeResult> {
 
   // ---- Immediate ----
   const items: { to: string; subject: string; html: string; text?: string }[] = [];
+  const preloaded = draft.templateId ? await loadStored(draft.templateId) : null;
+  if (draft.templateId && !preloaded) {
+    return { ok: false, error: "That template no longer exists." };
+  }
   for (const p of people) {
-    const rendered = await renderFor(draft, p);
+    const rendered = await renderFor(draft, p, preloaded);
     if (!rendered) return { ok: false, error: "That template no longer exists." };
     if (rendered.missing.length > 0) {
       return {

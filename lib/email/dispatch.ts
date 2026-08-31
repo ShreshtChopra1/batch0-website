@@ -377,7 +377,15 @@ async function claimImmediate(args: {
  * yet. That's what an admin expects when they fix a typo in a sequence
  * that's mid-send.
  */
-export async function sendQueuedRow(row: QueuedRow): Promise<boolean> {
+export async function sendQueuedRow(
+  row: QueuedRow,
+  /**
+   * Per-drain template cache. A fan-out is N rows against one or two
+   * templates, so without this the drainer re-fetches the same row once per
+   * recipient — 200 identical SELECTs on a 200-person step.
+   */
+  templateCache?: Map<string, TemplateRow | null>,
+): Promise<boolean> {
   const admin = createAdminClient();
   try {
     let subject: string;
@@ -388,7 +396,13 @@ export async function sendQueuedRow(row: QueuedRow): Promise<boolean> {
     let replyTo: string | undefined;
 
     if (row.template_id) {
-      const tpl: TemplateRow | null = await getTemplateById(row.template_id);
+      let tpl: TemplateRow | null;
+      if (templateCache?.has(row.template_id)) {
+        tpl = templateCache.get(row.template_id)!;
+      } else {
+        tpl = await getTemplateById(row.template_id);
+        templateCache?.set(row.template_id, tpl);
+      }
       if (!tpl || !tpl.enabled) {
         await finish(admin, row.id, {
           status: "skipped",

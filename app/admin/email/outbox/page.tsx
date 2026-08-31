@@ -10,8 +10,12 @@ import { OutboxControls, RowAction } from "./outbox-controls";
 export const metadata = { title: "Email outbox · Admin" };
 export const dynamic = "force-dynamic";
 
+// Queue-specific statuses; `StatusBadge` in components/ui/card.tsx doesn't
+// model sending/skipped/canceled. `pending` deliberately matches the amber it
+// wears everywhere else in the admin rather than inventing a second meaning
+// for the same word.
 const STATUS_STYLES: Record<string, string> = {
-  pending: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  pending: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   sending: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
   sent: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   failed: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",

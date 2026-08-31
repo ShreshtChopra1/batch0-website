@@ -47,6 +47,12 @@ const APPLICATION_VARS: VariableDef[] = [
   { key: "review_notes", label: "Reviewer notes", example: "Strong technical founder." },
 ];
 
+/**
+ * Only events that a call site actually fires belong here. An event listed but
+ * never emitted is worse than a missing one: an admin builds an automation on
+ * it, enables it, and it silently never sends. Add the entry in the same
+ * change that adds the `emitEmailEvent` call.
+ */
 export const EMAIL_EVENTS: EmailEventDef[] = [
   {
     key: "user.signup",
@@ -98,67 +104,12 @@ export const EMAIL_EVENTS: EmailEventDef[] = [
       { key: "starts_on", label: "Cohort start date", example: "September 14, 2026" },
     ],
   },
-  {
-    key: "charge.issued",
-    label: "Fee or fine issued",
-    description: "An admin issues a charge against a student.",
-    group: "Money",
-    variables: [
-      { key: "amount", label: "Amount due", example: "$25.00" },
-      { key: "reason", label: "Reason", example: "Late submission" },
-      { key: "due_on", label: "Due date", example: "October 1, 2026" },
-    ],
-  },
-  {
-    key: "cohort.enrolled",
-    label: "Enrolled in a cohort",
-    description: "A student is added to a cohort roster.",
-    group: "Programme",
-    variables: [
-      { key: "cohort_name", label: "Cohort name", example: "Cohort 1" },
-      { key: "starts_on", label: "Start date", example: "September 14, 2026" },
-    ],
-  },
-  {
-    key: "challenge.submitted",
-    label: "Challenge submitted",
-    description: "A student submits a weekly challenge.",
-    group: "Programme",
-    variables: [
-      { key: "challenge_title", label: "Challenge title", example: "Week 2 — Talk to users" },
-    ],
-  },
-  {
-    key: "pass.granted",
-    label: "Founder Pass granted",
-    description: "A Founder Pass is minted or a request is approved.",
-    group: "Programme",
-    variables: [
-      { key: "pass_code", label: "Pass code", example: "B0-4K9Q-2M" },
-    ],
-  },
-  {
-    key: "team.offer_sent",
-    label: "Team offer sent",
-    description: "A founder invites someone onto their team.",
-    group: "Programme",
-    variables: [
-      { key: "team_name", label: "Team name", example: "Northstar" },
-      { key: "inviter_name", label: "Who invited them", example: "Alex" },
-    ],
-  },
 ];
 
 const EVENT_BY_KEY = new Map(EMAIL_EVENTS.map((e) => [e.key, e]));
 
 export function eventDef(key: string): EmailEventDef | null {
   return EVENT_BY_KEY.get(key) ?? null;
-}
-
-/** Every tag an automation on this event can offer, common ones included. */
-export function variablesForEvent(key: string | null): VariableDef[] {
-  const ev = key ? EVENT_BY_KEY.get(key) : null;
-  return [...COMMON_VARIABLES, ...(ev?.variables ?? [])];
 }
 
 export const EVENT_GROUPS: { label: string; events: EmailEventDef[] }[] =

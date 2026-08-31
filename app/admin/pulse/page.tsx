@@ -5,7 +5,6 @@ import { BarChart, TrendLine, Funnel, Meter } from "@/components/admin/charts";
 import { isoWeekStart, mondayOf } from "@/lib/week";
 import { thisMonthStartISODate } from "@/lib/ai/pricing";
 import {
-  Activity,
   Inbox,
   CheckCircle,
   CreditCard,
@@ -89,15 +88,15 @@ export default async function PulsePage() {
     { data: enrolledRows },
     { data: aiUsageRow },
     { data: auditDecisions },
-    { data: allApps },
   ] = await Promise.all([
-    // Eight weeks, not two. This query feeds the 8-week bar chart as well as
-    // the 7-day deltas; when it was bounded at 14 days the six older bars
-    // rendered as zero — not "no applications", but "never fetched".
+    // One applications read, not two. The all-time set the funnel needs is a
+    // superset of the 8-week window the bar chart and the 7-day deltas need,
+    // and both bucket in JS anyway — so a second, narrower query was a whole
+    // extra table scan on every dashboard load for rows we already had.
     admin
       .from("applications")
       .select("id, status, created_at, submitted_at")
-      .gte("created_at", eightWeeksStart.toISOString()),
+      .limit(5000),
     admin
       .from("payments")
       .select("amount_cents, status, created_at")
@@ -130,10 +129,6 @@ export default async function PulsePage() {
       .select("action, created_at")
       .gte("created_at", prev7Start.toISOString())
       .in("action", ["application.accepted", "application.rejected"]),
-    // All-time, for the funnel. The funnel is a lifetime conversion picture —
-    // windowing it to 8 weeks would mix a partial cohort's early stages with
-    // a previous cohort's late ones and read as a collapse in conversion.
-    admin.from("applications").select("status, submitted_at").limit(5000),
   ]);
 
   // ── Application metrics ─────────────────────────────────────────────────
@@ -230,7 +225,10 @@ export default async function PulsePage() {
   // even when the underlying data is genuinely odd.
   const ACCEPTED_OR_BEYOND = new Set(["accepted", "paid", "enrolled"]);
   const PAID_OR_BEYOND = new Set(["paid", "enrolled"]);
-  const funnelRows = (allApps ?? []) as { status: string; submitted_at: string | null }[];
+  const funnelRows = (recentApps ?? []) as {
+    status: string;
+    submitted_at: string | null;
+  }[];
   const started = funnelRows.length;
   const submitted = funnelRows.filter((a) => a.submitted_at).length;
   const accepted = funnelRows.filter(
