@@ -234,6 +234,18 @@ export async function emitEmailEvent(
   return result;
 }
 
+/**
+ * Is this stored copy a complete HTML document rather than a body fragment?
+ *
+ * Only true for outbox rows written before the queue switched to storing
+ * fragments. The rich-text editor and the sanitizer both strip `<html>` and
+ * `<head>`, so a fragment can never look like one by accident.
+ */
+function isFullDocument(html: string): boolean {
+  const head = html.slice(0, 200).toLowerCase();
+  return head.includes("<!doctype") || head.includes("<html");
+}
+
 /** Hour bucket, so a repeat trigger inside the window collapses. */
 function dedupeBucket(windowHours: number): string {
   if (windowHours <= 0) return String(Date.now());
@@ -405,19 +417,29 @@ export async function sendQueuedRow(row: QueuedRow): Promise<boolean> {
         });
       }
     } else if (row.subject_override && row.html_override) {
-      // `html_override` is a BODY FRAGMENT, not a finished document. Wrapping
-      // it here rather than at enqueue time means a queued one-off picks up
-      // the current branded shell, and its merge tags resolve against the
-      // recipient at the moment it sends — the same contract the template
-      // path has.
-      const adhoc = renderAdHoc({
-        subject: row.subject_override,
-        bodyHtml: row.html_override,
-        values: row.variables ?? {},
-      });
-      subject = adhoc.subject;
-      html = adhoc.html;
-      text = adhoc.text;
+      // `html_override` is normally a BODY FRAGMENT. Wrapping it here rather
+      // than at enqueue time means a queued one-off picks up the current
+      // branded shell, and its merge tags resolve against the recipient at the
+      // moment it sends — the same contract the template path has.
+      //
+      // Rows queued before that change stored a fully-rendered document
+      // instead. Re-wrapping one would nest the branded shell inside itself
+      // and send a visibly doubled email, so a finished document is detected
+      // and passed through untouched. Cheap, and it only has to be right for
+      // rows already in flight — nothing writes this shape any more.
+      if (isFullDocument(row.html_override)) {
+        subject = row.subject_override;
+        html = row.html_override;
+      } else {
+        const adhoc = renderAdHoc({
+          subject: row.subject_override,
+          bodyHtml: row.html_override,
+          values: row.variables ?? {},
+        });
+        subject = adhoc.subject;
+        html = adhoc.html;
+        text = adhoc.text;
+      }
     } else {
       await finish(admin, row.id, {
         status: "failed",
