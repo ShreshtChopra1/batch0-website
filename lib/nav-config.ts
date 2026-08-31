@@ -31,6 +31,7 @@ import {
   Flag,
   KeyRound,
   Calendar as CalendarIcon,
+  Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PRE_COHORT_ALLOWED_HREFS } from "@/lib/pre-cohort";
@@ -335,6 +336,24 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
         label: "Email blast",
         icon: Send,
         perm: "email.send",
+      },
+      {
+        href: "/admin/email/templates",
+        label: "Email templates",
+        icon: FileText,
+        perm: "email.templates",
+      },
+      {
+        href: "/admin/email/automations",
+        label: "Email automations",
+        icon: Workflow,
+        perm: "email.automate",
+      },
+      {
+        href: "/admin/email/outbox",
+        label: "Email outbox",
+        icon: Inbox,
+        perm: "email.view",
       },
       {
         href: "/admin/referrals",
