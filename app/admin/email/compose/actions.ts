@@ -144,6 +144,15 @@ async function renderFor(
   });
 }
 
+/** The sanitized body plus the CTA, as one editable fragment. */
+function composeBodyFragment(draft: ComposeDraft): string {
+  const body = sanitizeEmailHtml(draft.bodyHtml ?? "");
+  const label = draft.ctaLabel.trim();
+  const url = draft.ctaUrl.trim();
+  if (!label || !url) return body;
+  return `${body}<p><a href="${url}">${label}</a></p>`;
+}
+
 function validateDraft(draft: ComposeDraft): { ok: true } | { ok: false; error: string } {
   if (!draft.templateId) {
     if (!draft.subject.trim()) return { ok: false, error: "Subject is required." };
@@ -260,11 +269,11 @@ export async function sendCompose(draft: ComposeDraft): Promise<ComposeResult> {
     const when = new Date(draft.scheduledFor);
     let queued = 0;
     for (const p of people) {
-      // A scheduled one-off with no template behind it stores its rendered
-      // copy, because there's nothing to re-render from later. With a
-      // template it stores only the reference, so an edit before the send
-      // time still applies.
-      const rendered = draft.templateId ? null : await renderFor(draft, p);
+      // A scheduled one-off with no template behind it stores its BODY, not a
+      // finished document — the shell and the merge tags are applied when it
+      // sends. That keeps it editable from the outbox and lets a footer change
+      // reach mail that hasn't gone yet. With a template it stores only the
+      // reference, so an edit before the send time still applies.
       const id = await enqueueEmail({
         templateId: draft.templateId || null,
         to: p.email,
@@ -272,8 +281,10 @@ export async function sendCompose(draft: ComposeDraft): Promise<ComposeResult> {
         userId: p.userId,
         vars: baseVariables({ email: p.email, name: p.name }),
         sendAfter: when,
-        subjectOverride: rendered?.subject ?? null,
-        htmlOverride: rendered?.html ?? null,
+        subjectOverride: draft.templateId ? null : draft.subject.trim(),
+        htmlOverride: draft.templateId
+          ? null
+          : composeBodyFragment(draft),
       });
       if (id) queued++;
     }

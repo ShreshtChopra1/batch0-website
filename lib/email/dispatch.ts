@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
 import { sendEmail, type EmailResult } from "@/lib/email/send";
-import { renderTemplate } from "@/lib/email/render";
+import { renderTemplate, renderAdHoc } from "@/lib/email/render";
 import { getEmailSettings, formatFrom } from "@/lib/email/settings";
 import {
   automationsForEvent,
@@ -405,8 +405,19 @@ export async function sendQueuedRow(row: QueuedRow): Promise<boolean> {
         });
       }
     } else if (row.subject_override && row.html_override) {
-      subject = row.subject_override;
-      html = row.html_override;
+      // `html_override` is a BODY FRAGMENT, not a finished document. Wrapping
+      // it here rather than at enqueue time means a queued one-off picks up
+      // the current branded shell, and its merge tags resolve against the
+      // recipient at the moment it sends — the same contract the template
+      // path has.
+      const adhoc = renderAdHoc({
+        subject: row.subject_override,
+        bodyHtml: row.html_override,
+        values: row.variables ?? {},
+      });
+      subject = adhoc.subject;
+      html = adhoc.html;
+      text = adhoc.text;
     } else {
       await finish(admin, row.id, {
         status: "failed",

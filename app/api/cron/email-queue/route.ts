@@ -12,24 +12,22 @@ export const maxDuration = 60;
 /**
  * Drains the email outbox and fires any scheduled automation that came due.
  *
- * Runs hourly, via 24 separate once-a-day entries in vercel.json rather than
- * one `0 * * * *`. That looks absurd until you hit the reason: this project is
- * on a Vercel Hobby plan, which rejects any cron expression that fires more
- * than once a day. Twenty-four daily expressions are each legal on their own
- * and add up to the hourly drain the queue actually needs. Collapse them back
- * into a single hourly expression — or a five-minute one — the moment this
- * account moves to Pro.
+ * Every five minutes, which is the trade: a delayed drip step lands within
+ * five minutes of its scheduled moment, and a scheduled automation fires
+ * within five minutes of its cron. That tolerance is why the matcher asks
+ * "were you due at any point since you last ran?" rather than "are you due
+ * this minute?" — see `wasDue` in lib/email/cron.ts. A schedule fires exactly
+ * once per due moment regardless of when the drain lands.
  *
- * Hourly is coarse, and the design already absorbs it: the schedule matcher
- * asks "were you due at any point since you last ran?" rather than "are you
- * due this minute?" (see `wasDue` in lib/email/cron.ts), so a 14:30 schedule
- * still fires exactly once — on the 15:00 drain. What an admin gives up is
- * punctuality, not delivery.
+ * (Historical note: an earlier deploy of this file was rejected with "Hobby
+ * accounts are limited to daily cron jobs" and shipped as 24 hourly entries to
+ * work around it. The project is on Pro and a five-minute expression is accepted; if that error
+ * ever returns, the workaround was 24 separate `0 H * * *` entries on this one
+ * path, each individually legal.)
  *
- * Transactional email does not wait for any of this. A zero-delay step sends
- * inline at the moment the event fires; the queue only holds delayed and
- * scheduled mail. And /admin/email/outbox has a "Run queue now" button for
- * anyone who doesn't want to wait for the hour.
+ * Transactional email does not wait for this. A zero-delay step sends inline
+ * at the moment the event fires; the queue only holds delayed and scheduled
+ * mail. /admin/email/outbox also has a "Run queue now" button.
  */
 export async function GET(req: Request) {
   // Fail closed when CRON_SECRET isn't configured. An open endpoint here

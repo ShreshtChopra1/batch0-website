@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Play, XCircle, RotateCcw } from "lucide-react";
+import Link from "next/link";
+import { Play, XCircle, RotateCcw, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { getActionError } from "@/lib/action-error";
@@ -94,8 +95,16 @@ export function RowAction({
   if (!canCancel && !canRetry) return null;
 
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center justify-end gap-3">
       {error && <span className="text-xs text-red-500">{error}</span>}
+      {canCancel && (
+        <Link
+          href={`/admin/email/outbox/${id}`}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-ink-soft hover:text-ink"
+        >
+          <Pencil className="h-3.5 w-3.5" /> Edit
+        </Link>
+      )}
       <button
         type="button"
         disabled={pending}

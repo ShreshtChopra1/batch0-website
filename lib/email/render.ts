@@ -175,3 +175,30 @@ export function renderAdHoc(args: {
     { footerExtra: args.footerExtra },
   );
 }
+
+/**
+ * The interpolated body of a template as an editable HTML *fragment*, with the
+ * CTA folded in as a link.
+ *
+ * This is what "freeze this template onto one queued email" produces. It has
+ * to be a fragment rather than the finished document, because the admin then
+ * edits it in the rich-text editor — handing that editor a full
+ * `<!doctype html>` page would be unusable, and re-wrapping an already-wrapped
+ * document on the next save would nest the branded shell inside itself.
+ *
+ * Deliberately keeps the merge tags UNRESOLVED where the caller passes no
+ * value, so a frozen email still personalises at send time.
+ */
+export function renderBodyFragment(
+  template: StoredTemplate,
+  values: VariableValues = {},
+): string {
+  const body = interpolate(
+    sanitizeEmailHtml(template.body_html ?? ""),
+    values,
+    { escape: true },
+  );
+  const cta = resolveCta(template, values);
+  if (!cta) return body;
+  return `${body}<p><a href="${cta.url}">${cta.label}</a></p>`;
+}

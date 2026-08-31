@@ -445,9 +445,9 @@ export function AutomationEditor({
                 </p>
               ) : null}
               <p className="mt-1.5 text-xs text-ink-faint">
-                The queue is checked once an hour, so a schedule fires on the
-                next hour boundary after its time — a 14:30 schedule goes out at
-                15:00. It never fires twice or gets skipped. Use{" "}
+                The queue is checked every five minutes, so a schedule fires
+                within a few minutes of its time. It never fires twice or gets
+                skipped. Use{" "}
                 <strong className="text-ink-soft">Run now</strong> if you need it
                 to go immediately.
               </p>
