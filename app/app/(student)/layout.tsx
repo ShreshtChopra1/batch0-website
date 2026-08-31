@@ -1,8 +1,12 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ArrowRight, Lock } from "lucide-react";
 import { requireViewer, roleHome } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { getStudentAccess, installedAppAccessFrom } from "@/lib/access";
 import { AppShell } from "@/components/app/frame";
 import type { Tab } from "@/components/app/tab-bar";
+import type { Role } from "@/lib/types";
 
 /**
  * The four things a student does from a phone.
@@ -38,5 +42,62 @@ export default async function StudentAppLayout({
   if (!can(caps, "student.dashboard")) {
     redirect(await roleHome(profile.role));
   }
+
+  // The app is for people who are actually in the program — enrolled, or with a
+  // live application. Enforced here rather than in middleware because the
+  // answer needs the enrollments and applications rows, and getStudentAccess
+  // already has them request-cached for the page that renders next: gating here
+  // costs nothing, gating in middleware would cost two cross-region reads on
+  // every request.
+  //
+  // Rendered as a screen, not a redirect. Everyone reaching this point is
+  // signed in and holds `student.dashboard`, so their role home IS /dashboard —
+  // bouncing them there would be a silent round trip that looks like the app
+  // failing to open, and bouncing to /app would loop.
+  const access = await getStudentAccess(profile.role as Role);
+  if (!installedAppAccessFrom(access)) {
+    return <NotInTheProgram status={access.applicationStatus} />;
+  }
+
   return <AppShell tabs={STUDENT_TABS}>{children}</AppShell>;
+}
+
+/**
+ * The locked screen, with the one action that actually moves the person
+ * forward. No tab bar: there is nothing behind it for them yet, and four dead
+ * tabs would read as a broken app rather than a closed door.
+ */
+function NotInTheProgram({ status }: { status: string | null }) {
+  const closed = status === "rejected" || status === "withdrawn";
+  return (
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-paper px-8 pt-[var(--safe-top)] text-center text-ink">
+      <Lock className="h-7 w-7 text-ink-faint" />
+      <h1 className="mt-6 font-display text-3xl leading-none tracking-[-0.01em]">
+        {closed ? "Not this cohort" : "The app opens when you apply"}
+      </h1>
+      <p className="mt-4 max-w-xs text-[14px] leading-relaxed text-ink-soft">
+        {closed
+          ? "Your application for this cohort is closed, so there's nothing here to show you yet. You can apply again when the next one opens."
+          : "batch0 on your phone is for students in the program. Submit an application and it unlocks — you'll get your cohort, your week, and your check-in right here."}
+      </p>
+      <Link
+        href="/apply"
+        prefetch={false}
+        className="press mt-8 inline-flex h-11 items-center gap-2 rounded-md bg-phosphor px-5 text-[14px] font-semibold leading-none text-on-phosphor shadow-cta active:scale-[0.98]"
+      >
+        {closed ? "Apply to another cohort" : "Start your application"}
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+      <Link
+        href="/dashboard"
+        prefetch={false}
+        className="press mt-4 text-[13px] text-ink-soft underline active:text-ink"
+      >
+        Go to the full dashboard
+      </Link>
+      <p className="mt-10 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+        batch<span className="text-phosphor-ink">0</span>
+      </p>
+    </div>
+  );
 }

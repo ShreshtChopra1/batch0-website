@@ -14,6 +14,7 @@ import {
   resolveHome,
   type Capabilities,
 } from "@/lib/permissions";
+import { isAppHost, isMarketingPath, MAIN_ORIGIN } from "@/lib/app-host";
 
 type CookiesToSet = {
   name: string;
@@ -125,6 +126,35 @@ function isAppPath(path: string): boolean {
 }
 
 export async function updateSession(request: NextRequest) {
+  // ---- App subdomain routing -------------------------------------------
+  //
+  // Runs before everything, including the public-static shortcut, because both
+  // rules below concern paths that shortcut would otherwise wave through.
+  //
+  // Deliberately two redirects rather than a rewrite. A rewrite would have to
+  // thread a mutated pathname through the whole session pipeline below —
+  // including the two places that re-issue `response` after a token refresh —
+  // and this is the one file where a mistake logs every user out. The cost of
+  // the redirect is one hop on the bare domain, which the installed app never
+  // pays: the manifest points start_url straight at /app.
+  const host = request.headers.get("host");
+  if (isAppHost(host)) {
+    // The subdomain IS the app, so its root is the app's root.
+    if (request.nextUrl.pathname === "/") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/app";
+      return NextResponse.redirect(url);
+    }
+    // Public pages belong to the apex. Serving them here too would put a second
+    // indexable copy of 135 blog posts on a subdomain that exists to be a
+    // private tool.
+    if (isMarketingPath(request.nextUrl.pathname)) {
+      return NextResponse.redirect(
+        `${MAIN_ORIGIN}${request.nextUrl.pathname}${request.nextUrl.search}`,
+      );
+    }
+  }
+
   if (isPublicStatic(request.nextUrl.pathname)) {
     return NextResponse.next();
   }
