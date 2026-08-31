@@ -89,6 +89,11 @@ const PUBLIC_STATIC_PREFIXES = [
   "/terms",
   "/refund-policy",
   "/sponsors",
+  // The service worker's offline fallback. It is precached at install time and
+  // served from the device with no network, so it reads nothing about the
+  // viewer by construction — running session work for it would only slow down
+  // the one request that happens while the connection is still fine.
+  "/offline",
 ];
 
 /**
@@ -105,6 +110,18 @@ function isPublicStatic(path: string): boolean {
     PUBLIC_STATIC_EXACT.has(path) ||
     PUBLIC_STATIC_PREFIXES.some((p) => path === p || path.startsWith(p + "/"))
   );
+}
+
+/**
+ * The installable app surface (app/app/**), matched exactly.
+ *
+ * Deliberately not `startsWith("/app")`: "/apply" starts with "/app" too, and
+ * "/apply" is the marketing funnel with its own signup-vs-login routing and its
+ * own place in the pending-fine gate. Conflating them is a one-character bug
+ * with a very confusing symptom.
+ */
+function isAppPath(path: string): boolean {
+  return path === "/app" || path.startsWith("/app/");
 }
 
 export async function updateSession(request: NextRequest) {
@@ -252,6 +269,16 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/mentor") ||
     path.startsWith("/investor") ||
     path.startsWith("/notifications") ||
+    // The installable app (app/app/**). Every route under it is authenticated;
+    // the per-side permission gates live in its layouts, the same way /dashboard
+    // and /admin work. It has to be listed here so a signed-out tap on the home
+    // screen icon lands on /login with ?next=/app instead of rendering a shell
+    // that redirects a beat later.
+    //
+    // Exact-or-"/app/" rather than a bare startsWith: "/apply" also starts with
+    // "/app", and collapsing the two would quietly hand the application funnel
+    // the app's gating.
+    isAppPath(path) ||
     path.startsWith("/apply");
   const authPath = path === "/login" || path === "/signup";
 
@@ -341,6 +368,11 @@ export async function updateSession(request: NextRequest) {
     const finePath =
       (path.startsWith("/dashboard") ||
         path.startsWith("/apply") ||
+        // The app is behind the fine gate too. Leaving it out would have made
+        // the home-screen icon a way around a hard block that exists precisely
+        // because it cannot be walked around — the fined student would simply
+        // use the app instead of the site.
+        isAppPath(path) ||
         path.startsWith("/mentor") ||
         path.startsWith("/investor")) &&
       !path.startsWith("/dashboard/billing") &&
