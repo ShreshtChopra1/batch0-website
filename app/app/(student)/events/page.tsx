@@ -73,7 +73,7 @@ export default async function StudentAppEvents() {
               {(upcoming ?? []).map((e) => (
                 <div
                   key={e.id as string}
-                  className="rounded-xl border border-line bg-wash px-4 py-3.5"
+                  className="rounded-2xl border border-line bg-wash px-5 py-4"
                 >
                   <p className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-phosphor-ink">
                     {TYPE_LABEL[e.type as string] ?? "Event"}
@@ -109,7 +109,7 @@ export default async function StudentAppEvents() {
 
         {(past ?? []).some((e) => e.recording_url) && (
           <Section title="Recent recordings">
-            <div className="rounded-xl border border-line px-4">
+            <div className="rounded-2xl border border-line px-4 sm:px-5">
               {(past ?? [])
                 .filter((e) => e.recording_url)
                 .map((e) => (

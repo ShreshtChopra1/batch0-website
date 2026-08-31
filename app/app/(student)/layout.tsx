@@ -3,8 +3,12 @@ import { redirect } from "next/navigation";
 import { ArrowRight, Lock } from "lucide-react";
 import { requireViewer, roleHome } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { getStudentAccess, installedAppAccessFrom } from "@/lib/access";
-import { AppShell } from "@/components/app/frame";
+import {
+  getStudentAccess,
+  installedAppAccessFrom,
+  loadAccessRows,
+} from "@/lib/access";
+import { AppShell, ActionLink } from "@/components/app/frame";
 import type { Tab } from "@/components/app/tab-bar";
 import type { Role } from "@/lib/types";
 
@@ -35,10 +39,21 @@ export default async function StudentAppLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Two reads, one wave. The eligibility check below needs a role this batch
+  // hasn't produced yet, but loadAccessRows() is keyed only on the signed-in
+  // user — so speculating on it here collapses what was a second serial
+  // cross-region round trip into this one. getStudentAccess() then reads it
+  // back from the request cache, and so does the page that renders next.
+  //
+  // This matters more here than on /dashboard: the layout's await is what the
+  // loading boundary waits on, so every round trip spent here is time the
+  // skeleton stays on screen. Same pattern as app/dashboard/layout.tsx.
+  const [viewer] = await Promise.all([requireViewer(), loadAccessRows()]);
+  const { profile, caps } = viewer;
+
   // Same gate as /dashboard: the participant area is `student.dashboard`.
   // Admins hold the wildcard and pass, which is what makes the "Student view"
   // link in /app/admin/more work.
-  const { profile, caps } = await requireViewer();
   if (!can(caps, "student.dashboard")) {
     redirect(await roleHome(profile.role));
   }
@@ -80,14 +95,12 @@ function NotInTheProgram({ status }: { status: string | null }) {
           ? "Your application for this cohort is closed, so there's nothing here to show you yet. You can apply again when the next one opens."
           : "batch0 on your phone is for students in the program. Submit an application and it unlocks — you'll get your cohort, your week, and your check-in right here."}
       </p>
-      <Link
-        href="/apply"
-        prefetch={false}
-        className="press mt-8 inline-flex h-11 items-center gap-2 rounded-md bg-phosphor px-5 text-[14px] font-semibold leading-none text-on-phosphor shadow-cta active:scale-[0.98]"
-      >
-        {closed ? "Apply to another cohort" : "Start your application"}
-        <ArrowRight className="h-4 w-4" />
-      </Link>
+      <div className="mt-9">
+        <ActionLink href="/apply">
+          {closed ? "Apply to another cohort" : "Start your application"}
+          <ArrowRight className="h-4 w-4" />
+        </ActionLink>
+      </div>
       <Link
         href="/dashboard"
         prefetch={false}

@@ -73,7 +73,7 @@ export default async function AdminAppMore() {
             The full admin panel. These are desktop-shaped pages — they open
             outside the app.
           </p>
-          <div className="rounded-xl border border-line px-4">
+          <div className="rounded-2xl border border-line px-4 sm:px-5">
             {reachable.map((item) => (
               <Row
                 key={item.href}

@@ -28,10 +28,14 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "batch0",
-    // "black-translucent" lets the page paint under the status bar, which is
-    // why AppHeader carries `pt-[var(--safe-top)]`. The two go together: drop
-    // the padding and the title renders behind the clock.
-    statusBarStyle: "black-translucent",
+    // NOT "black-translucent". That style makes the page paint *underneath* the
+    // status bar, so the layout becomes responsible for clearing the clock via
+    // env(safe-area-inset-top) — and that inset resolves to 0 in every context
+    // where `viewport-fit: cover` doesn't take, which put the header behind the
+    // status bar. "default" keeps the status bar opaque and the document below
+    // it, which is correct with no cooperation from the layout. AppHeader still
+    // pads by max(1rem, inset), so a notch is cleared either way.
+    statusBarStyle: "default",
   },
   // An installed app is a private tool. Nothing under /app should ever be in
   // an index, and every route here is authenticated anyway.

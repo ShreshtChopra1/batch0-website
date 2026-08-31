@@ -49,7 +49,7 @@ export default async function StudentAppAnnouncements() {
             {(announcements ?? []).map((a) => (
               <article
                 key={a.id as string}
-                className="rounded-xl border border-line bg-wash px-4 py-4"
+                className="rounded-2xl border border-line bg-wash px-5 py-4"
               >
                 <h2 className="text-[15px] font-medium leading-snug text-ink">
                   {a.title as string}

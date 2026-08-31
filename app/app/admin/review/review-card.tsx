@@ -84,7 +84,7 @@ export function ReviewCard({ item }: { item: ReviewItem }) {
 
   if (done) {
     return (
-      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3.5">
+      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-4">
         <p className="text-[14px] text-emerald-700 dark:text-emerald-300">
           {item.fullName} — {DECISION_LABEL[done]}.
         </p>
@@ -96,7 +96,7 @@ export function ReviewCard({ item }: { item: ReviewItem }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-wash">
+    <div className="overflow-hidden rounded-2xl border border-line bg-wash">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

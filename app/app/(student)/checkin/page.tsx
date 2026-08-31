@@ -45,25 +45,33 @@ export default async function StudentAppCheckin() {
 
   const admin = createAdminClient();
   const weekStart = isoWeekStart();
+  // One query, not two. Feedback hangs off the check-in row, so fetching it
+  // separately meant waiting for that row's id to come back before the second
+  // request could even be issued — a full serial round trip for a nested list.
+  // PostgREST resolves the whole tree in one hop.
+  //
+  // The `profiles` embed is unqualified, matching /mentor/checkins: there is
+  // exactly one FK from checkin_feedback to profiles, so no constraint hint is
+  // needed.
   const { data: checkin } = await admin
     .from("student_checkins")
-    .select("id, accomplished, next_up, blockers, is_milestone, updated_at")
+    .select(
+      "id, accomplished, next_up, blockers, is_milestone, updated_at, checkin_feedback(id, body, created_at, author:profiles(full_name))",
+    )
     .eq("user_id", profile.id)
     .eq("week_start", weekStart)
+    .order("created_at", {
+      ascending: true,
+      referencedTable: "checkin_feedback",
+    })
     .maybeSingle();
 
-  // Feedback hangs off the check-in row, so it can only be fetched once that
-  // row is known — the one genuinely serial pair on this screen.
-  const { data: feedback } = checkin
-    ? await admin
-        .from("checkin_feedback")
-        // Unqualified `profiles` embed, matching /mentor/checkins: there is
-        // exactly one FK from checkin_feedback to profiles, so PostgREST
-        // resolves it without a constraint hint.
-        .select("id, body, created_at, author:profiles(full_name)")
-        .eq("checkin_id", checkin.id)
-        .order("created_at", { ascending: true })
-    : { data: null };
+  const feedback = (checkin?.checkin_feedback ?? []) as Array<{
+    id: string;
+    body: string;
+    created_at: string;
+    author?: unknown;
+  }>;
 
   const weekLabel = formatWeekRange(weekStart);
 
@@ -109,7 +117,7 @@ export default async function StudentAppCheckin() {
                 return (
                   <div
                     key={f.id as string}
-                    className="rounded-xl border border-line bg-wash px-4 py-3.5"
+                    className="rounded-2xl border border-line bg-wash px-5 py-4"
                   >
                     <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-ink">
                       {f.body as string}

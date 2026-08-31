@@ -136,7 +136,7 @@ export default async function StudentAppMore() {
             <Link
               href="/dashboard/team"
               prefetch={false}
-              className="press block rounded-xl border border-line bg-wash px-4 py-3.5 active:scale-[0.99]"
+              className="press block rounded-2xl border border-line bg-wash px-5 py-4 active:scale-[0.99]"
             >
               <p className="text-[15px] leading-tight text-ink">{team.name}</p>
               {team.tagline && (
@@ -152,7 +152,7 @@ export default async function StudentAppMore() {
         )}
 
         <Section title="Everything else">
-          <div className="rounded-xl border border-line px-4">
+          <div className="rounded-2xl border border-line px-4 sm:px-5">
             {visible.map((l) => (
               <Row
                 key={l.href}

@@ -135,7 +135,7 @@ export default async function AdminAppPerson({
 
         {(charges ?? []).length > 0 && (
           <Section title="Owes">
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4">
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 sm:px-5">
               {(charges ?? []).map((c) => (
                 <Row
                   key={c.id as string}
@@ -153,7 +153,7 @@ export default async function AdminAppPerson({
         )}
 
         <Section title="Status">
-          <div className="rounded-xl border border-line px-4">
+          <div className="rounded-2xl border border-line px-4 sm:px-5">
             <Row
               label="Application"
               value={
@@ -206,7 +206,7 @@ export default async function AdminAppPerson({
               {(checkins ?? []).map((c) => (
                 <div
                   key={c.id as string}
-                  className="rounded-xl border border-line bg-wash px-4 py-3.5"
+                  className="rounded-2xl border border-line bg-wash px-5 py-4"
                 >
                   <p className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-ink-faint">
                     {formatWeekRange(c.week_start as string)}

@@ -109,7 +109,7 @@ export default async function AdminAppReview() {
                   key={item.id}
                   href={`/admin/applications/${item.id}`}
                   prefetch={false}
-                  className="press block rounded-xl border border-line bg-wash px-4 py-3.5 active:scale-[0.99]"
+                  className="press block rounded-2xl border border-line bg-wash px-5 py-4 active:scale-[0.99]"
                 >
                   <p className="text-[15px] leading-tight text-ink">
                     {item.fullName}

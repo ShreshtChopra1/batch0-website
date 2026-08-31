@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, Circle, Megaphone } from "lucide-react";
-import { requireViewer } from "@/lib/auth";
+import { requireUser, getProfile } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { LocalTime } from "@/components/ui/local-time";
@@ -17,6 +17,7 @@ import {
   Row,
   Empty,
   Alert,
+  ActionLink,
 } from "@/components/app/frame";
 import type { Role } from "@/lib/types";
 
@@ -33,30 +34,46 @@ export const dynamic = "force-dynamic";
  * behind More.
  */
 export default async function StudentAppHome() {
-  const { profile } = await requireViewer();
-  const access = await getStudentAccess(profile.role as Role);
+  // requireUser() is a LOCAL JWT verify (lib/auth.ts), not a database read, so
+  // everything keyed on the user id can start immediately — before the profile,
+  // the role, or the access rows have resolved. That is what makes the batch
+  // below one wave instead of three.
+  //
+  // This screen used to cost five serial cross-region round trips: viewer,
+  // then access rows, then the main batch, then the cohort-scoped batch, then
+  // lesson progress. Each one is a full hop from the function to a
+  // single-region Postgres, and on a phone on cellular they stacked up into the
+  // dead second the app opened with. It is now two.
+  const user = await requireUser();
   const admin = createAdminClient();
-  const userId = profile.id;
-  const cohortId = access.cohortId;
+  const userId = user.id;
   const weekStart = isoWeekStart();
   const nowIso = new Date().toISOString();
 
-  // One parallel batch. Everything below is keyed on either the signed-in user
-  // or their already-resolved cohort, so nothing has to wait on anything else —
-  // which matters more here than on the desktop dashboard, because this is the
-  // screen someone opens on a phone on cellular and abandons if it hangs.
+  // getStudentAccess needs a role, so it chains off the profile rather than
+  // blocking the whole batch on it. Both are request-cached and were already
+  // started by the layout, so in practice these resolve from cache.
+  const profilePromise = getProfile();
+  const accessPromise = profilePromise.then((p) =>
+    getStudentAccess((p?.role as Role) ?? "student"),
+  );
+
+  // ---- Wave 1: everything keyed on the user alone ----
   const [
+    profile,
+    access,
     { data: enrollment },
     { data: charges },
     { data: checkin },
-    { data: events },
-    { data: announcement },
     { count: unread },
+    { data: allProgress },
     challenge,
   ] = await Promise.all([
+    profilePromise,
+    accessPromise,
     admin
       .from("enrollments")
-      .select("id, cohort:cohorts(name, starts_on, ends_on)")
+      .select("id, cohort_id, cohort:cohorts(name, starts_on, ends_on)")
       .eq("user_id", userId)
       .maybeSingle(),
     // Fees AND fines. The desktop home shows only fees; a fine is the harder
@@ -75,30 +92,23 @@ export default async function StudentAppHome() {
       .eq("user_id", userId)
       .eq("week_start", weekStart)
       .maybeSingle(),
-    cohortId
-      ? admin
-          .from("events")
-          .select("id, title, type, starts_at, location, zoom_url")
-          .in("visibility", ["enrolled", "public"])
-          .or(`cohort_id.is.null,cohort_id.eq.${cohortId}`)
-          .gte("starts_at", nowIso)
-          .order("starts_at", { ascending: true })
-          .limit(2)
-      : { data: null },
-    cohortId
-      ? admin
-          .from("announcements")
-          .select("id, title, body, created_at")
-          .or(`cohort_id.is.null,cohort_id.eq.${cohortId}`)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      : { data: null },
     admin
       .from("notifications")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
       .is("read_at", null),
+    // Every lesson this student has finished, not just this week's.
+    //
+    // Fetching the whole set unfiltered looks wasteful and is the cheaper
+    // shape: filtering to the current week would need the week's lesson ids,
+    // which need the modules query, which needs the cohort — a third serial
+    // round trip to save a few dozen rows on a table that is one row per
+    // lesson a student has completed. The intersection happens in JS below.
+    admin
+      .from("lesson_progress")
+      .select("lesson_id")
+      .eq("user_id", userId)
+      .not("completed_at", "is", null),
     // The open challenge, if there is one. This is the only real per-student
     // DEADLINE the schema still carries: `assignments` and
     // `assignment_submissions` looked like the obvious source for "what's due",
@@ -113,15 +123,41 @@ export default async function StudentAppHome() {
     starts_on: string | null;
     ends_on: string | null;
   }>(enrollment?.cohort);
-  // Which week of the cohort today is. This is the one value the batch above
-  // has to resolve before the batch below can start — the module lookup is
-  // keyed on it — so it sits between them rather than at the bottom with the
-  // other derived values.
+  // The cohort comes from the enrollment row above rather than from
+  // getStudentAccess, so wave 2 depends only on wave 1 and never on the
+  // request-cached access resolution finishing first.
+  const cohortId =
+    (enrollment?.cohort_id as string | null) ?? access.cohortId ?? null;
   const week = cohortWeek(cohort?.starts_on ?? access.cohortStartsOn);
 
-  // Lesson progress for the current week — "3 of 5 done" is the honest answer
-  // to what's outstanding, and it comes from tables that exist.
-  const [{ data: weekLessons }, { data: challengeEntry }] = await Promise.all([
+  // ---- Wave 2: everything keyed on the cohort ----
+  // These four genuinely cannot start earlier — each needs the cohort id or the
+  // week number that wave 1 produced. Nothing after this awaits anything else.
+  const [
+    { data: events },
+    { data: announcement },
+    { data: weekLessons },
+    { data: challengeEntry },
+  ] = await Promise.all([
+    cohortId
+      ? admin
+          .from("events")
+          .select("id, title, type, starts_at, location, zoom_url")
+          .in("visibility", ["enrolled", "public"])
+          .or(`cohort_id.is.null,cohort_id.eq.${cohortId}`)
+          .gte("starts_at", nowIso)
+          .order("starts_at", { ascending: true })
+          .limit(2)
+      : Promise.resolve({ data: null }),
+    cohortId
+      ? admin
+          .from("announcements")
+          .select("id, title, body, created_at")
+          .or(`cohort_id.is.null,cohort_id.eq.${cohortId}`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
     cohortId && week
       ? admin
           .from("modules")
@@ -139,21 +175,18 @@ export default async function StudentAppHome() {
       : Promise.resolve({ data: null }),
   ]);
 
+  // "3 of 5 done" for the current week, intersected in memory against the full
+  // progress set fetched in wave 1 — no third round trip.
+  const doneLessonIds = new Set(
+    (allProgress ?? []).map((p) => p.lesson_id as string),
+  );
   const weekLessonIds = (weekLessons ?? []).flatMap((m) =>
     ((m.lessons ?? []) as Array<{ id: string }>).map((l) => l.id),
   );
-  const { data: weekProgress } = weekLessonIds.length
-    ? await admin
-        .from("lesson_progress")
-        .select("lesson_id")
-        .eq("user_id", userId)
-        .in("lesson_id", weekLessonIds)
-        .not("completed_at", "is", null)
-    : { data: null };
-  const weekDone = (weekProgress ?? []).length;
+  const weekDone = weekLessonIds.filter((id) => doneLessonIds.has(id)).length;
   const weekModuleTitle = (weekLessons ?? [])[0]?.title as string | undefined;
 
-  const firstName = profile.full_name?.split(" ")[0] || "there";
+  const firstName = profile?.full_name?.split(" ")[0] || "there";
   const startLabel = fmtDateOnly(access.cohortStartsOn);
 
   const eyebrow = access.preCohort
@@ -218,14 +251,10 @@ export default async function StudentAppHome() {
               tone="info"
               title={`You're enrolled${cohort?.name ? ` in ${cohort.name}` : ""}.`}
               action={
-                <Link
-                  href="/dashboard/kickoff"
-                  prefetch={false}
-                  className="press inline-flex h-9 items-center gap-2 rounded-md bg-phosphor px-3.5 text-[13px] font-semibold leading-none text-on-phosphor active:scale-[0.98]"
-                >
+                <ActionLink href="/dashboard/kickoff" size="sm">
                   Kickoff details
                   <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
+                </ActionLink>
               }
             >
               The course, your team page and check-ins unlock when the cohort
@@ -235,7 +264,7 @@ export default async function StudentAppHome() {
         ) : (
           <>
             <Section title="This week" action={{ href: "/app/course", label: "Course" }}>
-              <div className="rounded-xl border border-line">
+              <div className="rounded-2xl border border-line">
                 <div className="px-4">
                   <Row
                     label={
@@ -307,7 +336,7 @@ export default async function StudentAppHome() {
               {(events ?? []).length === 0 ? (
                 <Empty>Nothing on the calendar yet.</Empty>
               ) : (
-                <div className="rounded-xl border border-line px-4">
+                <div className="rounded-2xl border border-line px-4 sm:px-5">
                   {(events ?? []).map((e) => (
                     <Row
                       key={e.id}
@@ -335,7 +364,7 @@ export default async function StudentAppHome() {
             <Link
               href="/app/announcements"
               prefetch={false}
-              className="press block rounded-xl border border-line bg-wash px-4 py-3.5 active:scale-[0.99]"
+              className="press block rounded-2xl border border-line bg-wash px-5 py-4 active:scale-[0.99]"
             >
               <p className="text-[14px] font-medium leading-snug text-ink">
                 {announcement.title}
@@ -408,14 +437,10 @@ function ApplicationState({ status }: { status: string | null }) {
       title={state.title}
       action={
         state.cta && (
-          <Link
-            href={state.cta.href}
-            prefetch={false}
-            className="press inline-flex h-9 items-center gap-2 rounded-md bg-phosphor px-3.5 text-[13px] font-semibold leading-none text-on-phosphor active:scale-[0.98]"
-          >
-            {state.cta.label}
+          <ActionLink href={state.cta.href} size="sm">
+
             <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+            </ActionLink>
         )
       }
     >

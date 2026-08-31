@@ -79,7 +79,7 @@ export function AnnounceForm({ cohorts }: { cohorts: CohortOption[] }) {
 
   if (sent) {
     return (
-      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-4">
+      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-4">
         <p className="text-[14px] font-medium text-emerald-700 dark:text-emerald-300">
           Sent to {sent.recipients} student{sent.recipients === 1 ? "" : "s"}.
         </p>

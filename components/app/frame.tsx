@@ -4,31 +4,30 @@ import { TabBar, type Tab } from "./tab-bar";
 /**
  * The chrome every screen in the installed app sits inside.
  *
- * The header is deliberately NOT part of this component even though it looks
- * like it belongs here. It lives in each page instead, because a Next layout
- * cannot know its child page's title, and threading one through would mean
- * either a context provider (a client boundary around the whole app, to render
- * a string) or a `usePathname` lookup table that silently goes stale the day
- * someone adds a route. A page rendering its own <AppHeader> is one line and
- * cannot drift. The header still sticks to the viewport from inside <main>,
- * since <main> is not a scroll container.
+ * Sizing here is phone-first and deliberately roomy. The first pass was built
+ * to fit as much as possible above the fold and read as cramped on a real
+ * device: 54px rows, 13px secondary text, 12px gutters. Touch UI wants the
+ * opposite of density — a 62px row with air around it is easier to hit AND
+ * easier to scan, and scrolling is free.
  *
- * Two measurements here are not decoration:
+ * Two measurements are load-bearing rather than cosmetic:
  *
- *   `pb-[calc(3.5rem+var(--safe-bottom)+1rem)]` on <main> — the tab bar is
- *   `fixed`, so it takes no layout space. 3.5rem is its height, the inset is the
- *   home indicator, and the extra 1rem stops the final row of a list from
- *   sitting flush against the bar. Change the bar's height and this must move
- *   with it.
+ *   `pb-[calc(3.75rem+var(--safe-bottom)+1.5rem)]` on <main> — the tab bar is
+ *   `fixed`, so it takes no layout space. 3.75rem is its height, the inset is
+ *   the home indicator, and the rest stops the last row of a list from sitting
+ *   under the bar. Change the bar's height and this must move with it.
  *
- *   `min-h-[100dvh]`, not `100vh` — on iOS Safari `vh` is the *largest* viewport
- *   height, so a full-height screen is always taller than what you can see and
- *   the page scrolls a little for no reason.
+ *   `min-h-[100dvh]`, not `100vh` — on iOS Safari `vh` is the *largest*
+ *   viewport height, so a full-height screen is always taller than what you can
+ *   see and the page scrolls a little for no reason.
  *
- * `max-w-lg` throughout: this surface is designed for a phone and is not a
- * responsive re-flow of the desktop panels. On a tablet or a desktop browser it
- * stays a centred phone-width column rather than stretching into a layout
- * nobody designed — the full /dashboard and /admin remain the wide surfaces.
+ * The header is NOT part of this component even though it looks like it
+ * belongs. A Next layout cannot know its child page's title, and threading one
+ * through would mean either a context provider (a client boundary around the
+ * whole app, to render a string) or a `usePathname` lookup table that goes
+ * stale the day someone adds a route. A page rendering its own <AppHeader> is
+ * one line and cannot drift. It still sticks to the viewport from inside
+ * <main>, since <main> is not a scroll container.
  */
 export function AppShell({
   tabs,
@@ -38,11 +37,18 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   return (
+    // No overflow-x here on purpose. <body> already carries `overflow-x: clip`
+    // globally (app/globals.css), and that file documents why it must be `clip`
+    // and not `hidden`: `hidden` on one axis forces the other to `auto`, which
+    // makes the element a scroll container and silently stops every
+    // `position: sticky` descendant from sticking. AppHeader is sticky, so
+    // re-declaring overflow here is at best redundant and at worst the exact
+    // bug that comment exists to prevent.
     <div className="min-h-[100dvh] bg-paper text-ink">
       <main
         id="main-content"
         tabIndex={-1}
-        className="mx-auto max-w-lg pb-[calc(3.5rem+var(--safe-bottom)+1rem)]"
+        className="mx-auto min-h-[100dvh] max-w-[32rem] pb-[calc(3.75rem+var(--safe-bottom)+1.5rem)] sm:border-x sm:border-line"
       >
         {children}
       </main>
@@ -54,9 +60,13 @@ export function AppShell({
 /**
  * The per-screen header.
  *
- * `pt-[var(--safe-top)]` is required, not cosmetic: under `display: standalone`
- * there is no browser chrome above the document, so the OS status bar sits
- * directly on top of it and an un-inset title renders behind the clock.
+ * The top padding is `max(1rem, env(safe-area-inset-top))`, not the bare inset.
+ * That is the fix for the title rendering under the status bar: the inset
+ * resolves to 0 in plenty of real contexts — a normal browser tab, Android, a
+ * desktop window, any viewport where `viewport-fit: cover` didn't take — and a
+ * header padded only by the inset then has no padding at all and collides with
+ * whatever the OS draws on top. max() means the header always has real
+ * breathing room and grows to clear a notch when there is one.
  */
 export function AppHeader({
   title,
@@ -70,15 +80,15 @@ export function AppHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-30 -mx-px border-b border-line bg-paper/95 pt-[var(--safe-top)] backdrop-blur">
-      <div className="flex items-center gap-3 px-5 py-3">
+    <header className="sticky top-0 z-30 border-b border-line bg-paper/90 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-xl">
+      <div className="flex items-center gap-3 px-5 pb-4 sm:px-6">
         <div className="min-w-0 flex-1">
           {eyebrow && (
-            <p className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink-faint">
+            <p className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-ink-faint">
               {eyebrow}
             </p>
           )}
-          <h2 className="mt-0.5 truncate font-display text-2xl leading-none tracking-[-0.01em] text-ink">
+          <h2 className="mt-1 truncate font-display text-[1.75rem] leading-none tracking-[-0.01em] text-ink">
             {title}
           </h2>
         </div>
@@ -90,10 +100,10 @@ export function AppHeader({
 
 /** The padded body under the header. Every screen wraps its content in this. */
 export function AppBody({ children }: { children: React.ReactNode }) {
-  return <div className="px-5 pt-5">{children}</div>;
+  return <div className="px-5 pt-7 sm:px-6">{children}</div>;
 }
 
-/** Section heading. Uppercase mono label over a hairline, matching the panels. */
+/** Section heading. Uppercase mono label, matching the panels. */
 export function Section({
   title,
   action,
@@ -104,22 +114,21 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mt-7 first:mt-0">
+    <section className="mt-10 first:mt-0">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink-faint">
+        <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-ink-faint">
           {title}
         </h3>
         {action && (
           <Link
             href={action.href}
-            prefetch={false}
-            className="press shrink-0 text-xs text-phosphor-ink hover:underline"
+            className="press -my-1 shrink-0 py-1 text-[13px] text-phosphor-ink hover:underline"
           >
             {action.label} →
           </Link>
         )}
       </div>
-      <div className="mt-3">{children}</div>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -127,7 +136,7 @@ export function Section({
 /** The empty state. One sentence, no illustration, no call to action it can't honour. */
 export function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-[13px] text-ink-soft">
+    <p className="rounded-2xl border border-dashed border-line px-5 py-8 text-center text-[14px] leading-relaxed text-ink-soft">
       {children}
     </p>
   );
@@ -159,24 +168,28 @@ export function Stat({
         : "text-ink";
   const body = (
     <>
-      <p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-ink-faint">
+      <p className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-ink-faint">
         {label}
       </p>
+      {/* Fixed-width digits: these sit in a grid, and proportional numerals
+          make two tiles side by side look misaligned as the counts change. */}
       <p
-        className={`mt-1.5 text-3xl font-semibold leading-none tracking-tight tabular-nums ${valueTone}`}
+        className={`mt-2.5 text-[2.125rem] font-semibold leading-[0.95] tracking-[-0.02em] tabular-nums ${valueTone}`}
       >
         {value}
       </p>
-      {hint && <p className="mt-1.5 text-[11px] leading-snug text-ink-faint">{hint}</p>}
+      {hint && (
+        <p className="mt-2 text-[11.5px] leading-snug text-ink-faint">{hint}</p>
+      )}
     </>
   );
-  const cls = "rounded-xl border border-line bg-wash px-4 py-3.5";
+  const cls =
+    "rounded-2xl border border-line bg-wash px-4 py-4 min-h-[7rem] flex flex-col justify-center";
   if (!href) return <div className={cls}>{body}</div>;
   return (
     <Link
       href={href}
-      prefetch={false}
-      className={`press block hover:border-ink/30 active:scale-[0.99] ${cls}`}
+      className={`press hover:border-ink/25 active:scale-[0.985] ${cls}`}
     >
       {body}
     </Link>
@@ -204,22 +217,22 @@ export function Row({
   muted?: boolean;
 }) {
   const body = (
-    <div className="flex min-h-[54px] items-center gap-3 py-3">
+    <div className="flex min-h-[3.875rem] items-center gap-3.5 py-3.5">
       <div className="min-w-0 flex-1">
         <p
-          className={`truncate text-[15px] leading-tight ${
+          className={`truncate text-[15.5px] leading-snug ${
             muted ? "text-ink-soft" : "text-ink"
           }`}
         >
           {label}
         </p>
         {value && (
-          <p className="mt-1 truncate text-[13px] leading-tight text-ink-soft">
+          <p className="mt-1 truncate text-[13.5px] leading-snug text-ink-soft">
             {value}
           </p>
         )}
         {meta && (
-          <p className="mt-1 truncate font-mono text-[11px] tabular-nums text-ink-faint">
+          <p className="mt-1 truncate font-mono text-[11.5px] tabular-nums text-ink-faint">
             {meta}
           </p>
         )}
@@ -231,8 +244,7 @@ export function Row({
   return (
     <Link
       href={href}
-      prefetch={false}
-      className="press -mx-2 block border-b border-line px-2 last:border-0 active:bg-wash"
+      className="press -mx-2 block rounded-lg border-b border-line px-2 last:border-0 active:bg-wash"
     >
       {body}
     </Link>
@@ -257,12 +269,38 @@ export function Alert({
     info: "border-phosphor/30 bg-phosphor/[0.06] text-phosphor-ink",
   } as const;
   return (
-    <div className={`rounded-xl border px-4 py-3.5 ${tones[tone]}`}>
-      <p className="text-[13px] font-medium">{title}</p>
+    <div className={`rounded-2xl border px-5 py-4 ${tones[tone]}`}>
+      <p className="text-[14px] font-medium leading-snug">{title}</p>
       {children && (
-        <div className="mt-1 text-[12px] leading-relaxed text-ink-soft">{children}</div>
+        <div className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
+          {children}
+        </div>
       )}
-      {action && <div className="mt-3">{action}</div>}
+      {action && <div className="mt-4">{action}</div>}
     </div>
+  );
+}
+
+/**
+ * The one primary action shape, so buttons across the app can't drift.
+ * 44px tall is the floor for a comfortable touch target; these are 44 and 48.
+ */
+export function ActionLink({
+  href,
+  children,
+  size = "md",
+}: {
+  href: string;
+  children: React.ReactNode;
+  size?: "sm" | "md";
+}) {
+  const h = size === "sm" ? "h-10 px-4 text-[13px]" : "h-12 px-5 text-[14px]";
+  return (
+    <Link
+      href={href}
+      className={`press inline-flex select-none items-center gap-2 rounded-xl bg-phosphor font-semibold leading-none text-on-phosphor shadow-cta active:scale-[0.98] ${h}`}
+    >
+      {children}
+    </Link>
   );
 }

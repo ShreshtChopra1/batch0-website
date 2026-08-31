@@ -190,7 +190,7 @@ export default async function AdminAppToday() {
             {(recent ?? []).length === 0 ? (
               <Empty>No applications yet.</Empty>
             ) : (
-              <div className="rounded-xl border border-line px-4">
+              <div className="rounded-2xl border border-line px-4 sm:px-5">
                 {(recent ?? []).map((a) => (
                   <Row
                     key={a.id as string}

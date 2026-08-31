@@ -62,11 +62,24 @@ export default async function StudentAppCourse() {
     );
   }
 
-  const { data: enrollment } = await admin
-    .from("enrollments")
-    .select("cohort_id, cohort:cohorts(name, starts_on)")
-    .eq("user_id", profile.id)
-    .maybeSingle();
+  // ---- Wave 1: both keyed on the user alone ----
+  // Progress used to wait behind the module list so it could be filtered to
+  // those lessons. Fetching the student's whole completed set unfiltered is one
+  // small table read and removes a serial round trip; the intersection is done
+  // in memory below.
+  const [{ data: enrollment }, { data: progress }] = await Promise.all([
+    admin
+      .from("enrollments")
+      .select("cohort_id, cohort:cohorts(name, starts_on)")
+      .eq("user_id", profile.id)
+      .maybeSingle(),
+    admin
+      .from("lesson_progress")
+      .select("lesson_id")
+      .eq("user_id", profile.id)
+      .not("completed_at", "is", null),
+  ]);
+
   const cohortId = (enrollment?.cohort_id as string | null) ?? access.cohortId;
   const cohort = normalizeEmbed<{ name: string | null; starts_on: string | null }>(
     enrollment?.cohort,
@@ -83,45 +96,37 @@ export default async function StudentAppCourse() {
     );
   }
 
+  // ---- Wave 2: the whole syllabus in one query ----
+  // Lessons ride along as a nested embed rather than a second `in("module_id",
+  // …)` query that could only be issued once the module ids were known. Same
+  // rows, one round trip instead of two.
   const { data: modules } = await admin
     .from("modules")
-    .select("id, week, title, summary, position")
+    .select(
+      "id, week, title, summary, position, lessons(id, title, duration_seconds, position)",
+    )
     .eq("cohort_id", cohortId)
     .order("week", { ascending: true })
-    .order("position", { ascending: true });
+    .order("position", { ascending: true })
+    .order("position", { ascending: true, referencedTable: "lessons" });
 
-  const moduleIds = (modules ?? []).map((m) => m.id as string);
-  // Lessons and progress are both keyed on the module list, so they go out
-  // together rather than progress waiting behind lessons.
-  const [{ data: lessons }, { data: progress }] = await Promise.all([
-    moduleIds.length
-      ? admin
-          .from("lessons")
-          .select("id, module_id, title, duration_seconds, position")
-          .in("module_id", moduleIds)
-          .order("position", { ascending: true })
-      : Promise.resolve({ data: null }),
-    admin
-      .from("lesson_progress")
-      .select("lesson_id, completed_at")
-      .eq("user_id", profile.id)
-      .not("completed_at", "is", null),
-  ]);
-
-  const doneIds = new Set(
-    (progress ?? []).map((p) => p.lesson_id as string),
-  );
-  const byModule = new Map<string, typeof lessons>();
-  for (const l of lessons ?? []) {
-    const list = byModule.get(l.module_id as string) ?? [];
-    list.push(l);
-    byModule.set(l.module_id as string, list as typeof lessons);
+  const doneIds = new Set((progress ?? []).map((p) => p.lesson_id as string));
+  type LessonRow = {
+    id: string;
+    title: string;
+    duration_seconds: number | null;
+  };
+  const byModule = new Map<string, LessonRow[]>();
+  let totalLessons = 0;
+  let doneLessons = 0;
+  for (const m of modules ?? []) {
+    const items = ((m.lessons ?? []) as LessonRow[]) ?? [];
+    byModule.set(m.id as string, items);
+    totalLessons += items.length;
+    doneLessons += items.filter((l) => doneIds.has(l.id)).length;
   }
 
   const week = cohortWeek(cohort?.starts_on);
-  const totalLessons = (lessons ?? []).length;
-  const doneLessons = (lessons ?? []).filter((l) => doneIds.has(l.id as string))
-    .length;
 
   return (
     <>
@@ -140,7 +145,7 @@ export default async function StudentAppCourse() {
           <div className="space-y-2.5">
             {(modules ?? []).map((m) => {
               const items = byModule.get(m.id as string) ?? [];
-              const done = items.filter((l) => doneIds.has(l.id as string)).length;
+              const done = items.filter((l) => doneIds.has(l.id)).length;
               const current = week !== null && m.week === week;
               // A module for a week that hasn't arrived is shown, but marked —
               // students plan around what's coming, and hiding it entirely makes
@@ -150,7 +155,7 @@ export default async function StudentAppCourse() {
                 <details
                   key={m.id as string}
                   open={current}
-                  className="group overflow-hidden rounded-xl border border-line bg-wash open:bg-paper"
+                  className="group overflow-hidden rounded-2xl border border-line bg-wash open:bg-paper"
                 >
                   <summary className="press flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 active:bg-wash [&::-webkit-details-marker]:hidden">
                     <div className="min-w-0 flex-1">

@@ -85,7 +85,7 @@ export default async function AdminAppPeople({
           {(people ?? []).length === 0 ? (
             <Empty>{q ? "Nobody matches that." : "No people yet."}</Empty>
           ) : (
-            <div className="rounded-xl border border-line px-4">
+            <div className="rounded-2xl border border-line px-4 sm:px-5">
               {(people ?? []).map((p) => {
                 const status = statusByUser.get(p.id as string);
                 return (
