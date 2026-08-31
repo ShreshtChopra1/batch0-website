@@ -380,7 +380,14 @@ export async function fetchGuildMemberCount(): Promise<number | null> {
  * Null when the list can't be read — the caller degrades to printing the URIs
  * that need registering, which is still the actionable half.
  */
-export async function fetchOauthRedirectUris(): Promise<string[] | null> {
+export type DiscordAppInfo = {
+  /** The application the BOT TOKEN belongs to. */
+  id: string | null;
+  name: string | null;
+  redirectUris: string[] | null;
+};
+
+export async function fetchDiscordAppInfo(): Promise<DiscordAppInfo | null> {
   if (!env.discordBotToken) return null;
   try {
     const res = await fetch(`${API}/applications/@me`, {
@@ -388,10 +395,18 @@ export async function fetchOauthRedirectUris(): Promise<string[] | null> {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    const json = (await res.json()) as { redirect_uris?: unknown };
-    return Array.isArray(json.redirect_uris)
-      ? json.redirect_uris.filter((u): u is string => typeof u === "string")
-      : null;
+    const json = (await res.json()) as {
+      id?: unknown;
+      name?: unknown;
+      redirect_uris?: unknown;
+    };
+    return {
+      id: typeof json.id === "string" ? json.id : null,
+      name: typeof json.name === "string" ? json.name : null,
+      redirectUris: Array.isArray(json.redirect_uris)
+        ? json.redirect_uris.filter((u): u is string => typeof u === "string")
+        : null,
+    };
   } catch {
     return null;
   }

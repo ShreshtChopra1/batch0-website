@@ -11,7 +11,7 @@ import {
   isDiscordEnabled,
   listRegisteredCommands,
   fetchGuildMemberCount,
-  fetchOauthRedirectUris,
+  fetchDiscordAppInfo,
   expectedOauthRedirectUris,
   SLASH_COMMANDS,
 } from "@/lib/discord";
@@ -52,7 +52,7 @@ export default async function AdminDiscordPage() {
     memberCount,
     { data: meRow },
     doctor,
-    registeredRedirects,
+    appInfo,
   ] = await Promise.all([
     admin
       .from("site_settings")
@@ -73,7 +73,7 @@ export default async function AdminDiscordPage() {
       console.error("[discord] doctor failed", err);
       return null;
     }),
-    fetchOauthRedirectUris(),
+    fetchDiscordAppInfo(),
   ]);
 
   const initial: DiscordConfigInput = {
@@ -145,6 +145,7 @@ export default async function AdminDiscordPage() {
   // /auth/discord/start builds the redirect from the REQUEST origin, so apex
   // and www each produce their own URI and both must be registered.
   const expectedRedirects = expectedOauthRedirectUris(env.siteUrl);
+  const registeredRedirects = appInfo?.redirectUris ?? null;
   const missingRedirects =
     registeredRedirects === null
       ? []
@@ -153,6 +154,15 @@ export default async function AdminDiscordPage() {
     expectedRedirects.length > 0 &&
     registeredRedirects !== null &&
     missingRedirects.length === 0;
+
+  // The bot token and DISCORD_CLIENT_ID can belong to DIFFERENT Discord
+  // applications. When they do, everything above still looks healthy — the
+  // redirect check reads the bot's app while the OAuth link uses the other one
+  // — and account linking fails with "Invalid OAuth2 redirect_uri" no matter
+  // how many times the URI is added, because it keeps being added to the app
+  // nobody is authorising against.
+  const appIdMatches =
+    !appInfo?.id || !env.discordClientId || appInfo.id === env.discordClientId;
   const hasInteractions = Boolean(env.discordPublicKey);
   const guildId = env.discordGuildId;
 
@@ -246,6 +256,17 @@ export default async function AdminDiscordPage() {
                 : "Without these, users can't link Discord accounts."
             }
           />
+          <Status
+            ok={appIdMatches}
+            label="Bot token and DISCORD_CLIENT_ID are the same application"
+            hint={
+              appIdMatches
+                ? appInfo?.name
+                  ? `Both point at “${appInfo.name}” (${appInfo.id}).`
+                  : "No mismatch detected."
+                : `MISMATCH — the bot token belongs to “${appInfo?.name}” (${appInfo?.id}) but DISCORD_CLIENT_ID is ${env.discordClientId}. Account linking authorises against DISCORD_CLIENT_ID, so redirect URIs must be registered on THAT application. The check below reads the bot's app, so it can't be trusted while these differ.`
+            }
+          />
           {/*
             Discord rejects an unregistered redirect on its own domain, before
             the browser returns — /auth/discord/callback never runs, so this is
@@ -261,7 +282,7 @@ export default async function AdminDiscordPage() {
                   ? `Couldn't read the allow-list. Ensure OAuth2 → Redirects contains: ${expectedRedirects.join(", ")}`
                   : missingRedirects.length === 0
                     ? `All ${expectedRedirects.length} registered.`
-                    : `MISSING: ${missingRedirects.join(", ")} — add under OAuth2 → Redirects in the Discord developer portal, or linking fails with "Invalid OAuth2 redirect_uri".`
+                    : `MISSING: ${missingRedirects.join(", ")} — add these at https://discord.com/developers/applications/${env.discordClientId ?? appInfo?.id ?? ""}/oauth2 and press Save Changes, or linking fails with "Invalid OAuth2 redirect_uri".`
             }
           />
           <Status
