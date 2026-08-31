@@ -1,8 +1,13 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getEmailSettings } from "@/lib/email/settings";
-import { sendQueuedRow, enqueueEmail, baseVariables, type QueuedRow } from "@/lib/email/dispatch";
-import { evaluateCondition } from "@/lib/email/conditions";
-import { isMissingTable } from "@/lib/email/store";
+import { sendQueuedRow, baseVariables, type QueuedRow } from "@/lib/email/dispatch";
+import {
+  evaluateCondition,
+  parseCondition,
+  usersFailingCondition,
+  skipReasonFor,
+} from "@/lib/email/conditions";
+import { isMissingTable, type TemplateRow } from "@/lib/email/store";
 import { parseCron, wasDue, CronParseError } from "@/lib/email/cron";
 import { resolveAudience, audienceAddresses } from "@/lib/email/audience";
 import { isAudienceSegment } from "@/lib/email/catalog";
@@ -163,28 +168,69 @@ export async function drainEmailQueue(): Promise<DrainReport> {
         "id, template_id, to_email, to_name, user_id, variables, subject_override, html_override, automation_id, step_id, attempts, created_at",
       );
 
-    for (const row of (claimed ?? []) as any[]) {
-      const verdict = await gate(row);
-      if (!verdict.send) {
+    const rows = (claimed ?? []) as any[];
+    if (rows.length === 0) return report;
+
+    // Gate everything up front, in a handful of queries rather than a
+    // handful per row. See gateRows for why that matters at 200/run.
+    const verdicts = await gateRows(rows);
+
+    const skipped = rows.filter((r) => !verdicts.get(r.id)!.send);
+    const sendable = rows.filter((r) => verdicts.get(r.id)!.send);
+
+    if (skipped.length > 0) {
+      // One UPDATE per distinct reason instead of one per row.
+      const byReason = new Map<string, string[]>();
+      for (const r of skipped) {
+        const reason = (verdicts.get(r.id) as { reason: string }).reason;
+        (byReason.get(reason) ?? byReason.set(reason, []).get(reason)!).push(r.id);
+      }
+      for (const [reason, skipIds] of byReason) {
         await admin
           .from("email_outbox")
           .update({
             status: "skipped",
-            last_error: verdict.reason,
+            last_error: reason,
             updated_at: new Date().toISOString(),
           })
-          .eq("id", row.id);
-        report.skipped++;
-        continue;
+          .in("id", skipIds);
+        report.skipped += skipIds.length;
       }
-      await admin
-        .from("email_outbox")
-        .update({ attempts: (row.attempts ?? 0) + 1 })
-        .eq("id", row.id);
-      const ok = await sendQueuedRow(row as QueuedRow);
-      if (ok) report.sent++;
-      else report.failed++;
     }
+
+    if (sendable.length === 0) return report;
+
+    // Bump attempts for the whole batch in one write rather than per row.
+    await Promise.all(
+      groupBy(sendable, (r) => String(r.attempts ?? 0)).map(([attempts, group]) =>
+        admin
+          .from("email_outbox")
+          .update({ attempts: Number(attempts) + 1 })
+          .in(
+            "id",
+            group.map((r) => r.id),
+          ),
+      ),
+    );
+
+    // Bounded concurrency, not a sequential loop. Strictly sequential sends
+    // at ~200-500ms each blow the 60s function budget somewhere past the
+    // ~150th email, which would strand rows in `sending` with nothing left
+    // running to finish them. Unbounded would trip provider rate limits
+    // instead — Gmail especially. Eight in flight clears 200 sends in a few
+    // seconds and stays polite.
+    const templateCache = new Map<string, TemplateRow | null>();
+    const queue = [...sendable];
+    const workers = Array.from({ length: Math.min(8, queue.length) }, async () => {
+      for (;;) {
+        const row = queue.shift();
+        if (!row) return;
+        const ok = await sendQueuedRow(row as QueuedRow, templateCache);
+        if (ok) report.sent++;
+        else report.failed++;
+      }
+    });
+    await Promise.all(workers);
   } catch (err: any) {
     report.errors.push(`Send pass failed: ${err?.message ?? err}`);
   }
@@ -192,29 +238,80 @@ export async function drainEmailQueue(): Promise<DrainReport> {
   return report;
 }
 
-/** The step's condition, if this row came from an automation step. */
-async function gate(row: any) {
-  if (!row.step_id) return { send: true as const };
-  try {
-    const admin = createAdminClient();
-    const { data: step } = await admin
-      .from("email_automation_steps")
-      .select("condition, enabled")
-      .eq("id", row.step_id)
-      .maybeSingle();
-    if (!step) return { send: true as const };
-    // A step disabled while its mail was in flight should not go out — that's
-    // what an admin means when they untick it mid-drip.
-    if (!(step as any).enabled) {
-      return { send: false as const, reason: "Step was disabled before it sent" };
-    }
-    return evaluateCondition((step as any).condition, {
-      userId: row.user_id ?? null,
-      queuedAt: row.created_at ?? null,
-    });
-  } catch {
-    return { send: true as const };
+/** Group rows by a derived key, preserving insertion order. */
+function groupBy<T>(rows: T[], key: (row: T) => string): [string, T[]][] {
+  const map = new Map<string, T[]>();
+  for (const r of rows) {
+    const k = key(r);
+    const bucket = map.get(k);
+    if (bucket) bucket.push(r);
+    else map.set(k, [r]);
   }
+  return [...map.entries()];
+}
+
+/**
+ * Decide send/skip for every claimed row, in a bounded number of queries.
+ *
+ * The per-row version cost two queries each — one for the step, one for the
+ * condition — so a full 200-row drain spent ~400 round trips deciding what to
+ * send before sending anything. This loads the distinct steps in one query and
+ * asks each distinct condition once across all the users it applies to.
+ */
+async function gateRows(
+  rows: any[],
+): Promise<Map<string, { send: true } | { send: false; reason: string }>> {
+  const out = new Map<string, { send: true } | { send: false; reason: string }>();
+  for (const r of rows) out.set(r.id, { send: true });
+
+  const stepIds = [...new Set(rows.map((r) => r.step_id).filter(Boolean))];
+  if (stepIds.length === 0) return out;
+
+  const admin = createAdminClient();
+  const { data: steps } = await admin
+    .from("email_automation_steps")
+    .select("id, condition, enabled")
+    .in("id", stepIds);
+  const stepById = new Map((steps ?? []).map((s: any) => [s.id, s]));
+
+  // A step disabled while its mail was in flight should not go out — that's
+  // what an admin means when they untick it mid-drip.
+  const gated: any[] = [];
+  for (const r of rows) {
+    if (!r.step_id) continue;
+    const step = stepById.get(r.step_id);
+    if (!step) continue; // step replaced by a save; treat as ungated
+    if (!step.enabled) {
+      out.set(r.id, { send: false, reason: "Step was disabled before it sent" });
+      continue;
+    }
+    gated.push({ row: r, kind: parseCondition(step.condition) });
+  }
+
+  for (const [kind, group] of groupBy(gated, (g) => g.kind)) {
+    if (kind === "always") continue;
+    if (kind === "no_login_since") {
+      // No batch form — it reads auth.users per user.
+      for (const g of group) {
+        const verdict = await evaluateCondition(
+          { kind },
+          { userId: g.row.user_id ?? null, queuedAt: g.row.created_at ?? null },
+        );
+        if (!verdict.send) out.set(g.row.id, verdict);
+      }
+      continue;
+    }
+    const userIds = [...new Set(group.map((g) => g.row.user_id).filter(Boolean))];
+    const failing = await usersFailingCondition(kind as any, userIds);
+    if (failing.size === 0) continue;
+    const reason = skipReasonFor(kind as any);
+    for (const g of group) {
+      if (g.row.user_id && failing.has(g.row.user_id)) {
+        out.set(g.row.id, { send: false, reason });
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -242,22 +339,47 @@ export async function fanOutScheduled(
     .filter((s: any) => s.enabled)
     .sort((a: any, b: any) => a.step_index - b.step_index);
 
+  // One chunked INSERT, not one per person-step. The doc comment above used
+  // to claim a Monday automation to 800 people "writes 800 rows fast"; it
+  // wrote them one round trip at a time — 800 people x 3 steps = 2400
+  // sequential inserts, inside the same invocation that then has to send.
+  //
+  // `ignoreDuplicates` is the dedupe index doing natively what the per-row
+  // path did by catching 23505, so a re-run of the same due minute still
+  // collapses to one email per person.
+  const rows = addresses.flatMap((person) =>
+    steps.map((step: any) => ({
+      automation_id: automation.id,
+      step_id: step.id,
+      template_id: step.template_id,
+      to_email: person.email,
+      to_name: person.name,
+      user_id: person.userId,
+      variables: baseVariables({ email: person.email, name: person.name }),
+      send_after: new Date(
+        now.getTime() + step.delay_minutes * 60_000,
+      ).toISOString(),
+      dedupe_key: `sched:${automation.id}:${step.id}:${person.email.toLowerCase()}:${runStamp}`,
+      status: "pending",
+    })),
+  );
+
+  const admin = createAdminClient();
   let queued = 0;
-  for (const person of addresses) {
-    for (const step of steps) {
-      const id = await enqueueEmail({
-        automationId: automation.id,
-        stepId: step.id,
-        templateId: step.template_id,
-        to: person.email,
-        toName: person.name,
-        userId: person.userId,
-        vars: baseVariables({ email: person.email, name: person.name }),
-        sendAfter: new Date(now.getTime() + step.delay_minutes * 60_000),
-        dedupeKey: `sched:${automation.id}:${step.id}:${person.email.toLowerCase()}:${runStamp}`,
-      });
-      if (id) queued++;
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const { data, error } = await admin
+      .from("email_outbox")
+      .upsert(rows.slice(i, i + CHUNK), {
+        onConflict: "dedupe_key",
+        ignoreDuplicates: true,
+      })
+      .select("id");
+    if (error) {
+      console.error("[email/queue] fan-out insert failed", error.message);
+      continue;
     }
+    queued += data?.length ?? 0;
   }
   return queued;
 }

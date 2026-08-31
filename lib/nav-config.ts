@@ -32,6 +32,7 @@ import {
   KeyRound,
   Calendar as CalendarIcon,
   Workflow,
+  LineChart,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PRE_COHORT_ALLOWED_HREFS } from "@/lib/pre-cohort";
@@ -307,6 +308,12 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     label: "Operations",
     items: [
       { href: "/admin/pulse", label: "Pulse", icon: Activity, perm: "pulse.view" },
+      {
+        href: "/admin/progress",
+        label: "Student progress",
+        icon: LineChart,
+        perm: "people.view",
+      },
       {
         href: "/admin/interventions",
         label: "At-risk",

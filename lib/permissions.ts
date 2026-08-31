@@ -487,6 +487,7 @@ export const ADMIN_ROUTE_PERMISSIONS: ReadonlyArray<readonly [string, Permission
   ["/admin/applications", "applications.view"],
   ["/admin/application-questions", "applications.form"],
   ["/admin/students", "people.view"],
+  ["/admin/progress", "people.view"],
   ["/admin/mentors", "mentors.manage"],
   ["/admin/cohorts", "cohorts.manage"],
   ["/admin/challenges", "challenges.manage"],

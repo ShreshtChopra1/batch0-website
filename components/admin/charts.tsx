@@ -162,6 +162,7 @@ export function BarChart({
   format,
   aside,
   plotHeight = 140,
+  columns = ["Week of", "Value"],
 }: {
   title: string;
   subtitle?: string;
@@ -170,6 +171,8 @@ export function BarChart({
   format: (n: number) => string;
   aside?: React.ReactNode;
   plotHeight?: number;
+  /** Table-view headers. Defaults suit a weekly series. */
+  columns?: [string, string];
 }) {
   const values = data.map((d) => d.value);
   const peak = Math.max(0, ...values);
@@ -185,7 +188,7 @@ export function BarChart({
       aside={aside}
       table={
         <TableView
-          columns={["Week of", "Value"]}
+          columns={columns}
           rows={data.map((d) => [d.label, format(d.value)])}
         />
       }
@@ -226,11 +229,10 @@ export function BarChart({
               return (
                 <div
                   key={d.key}
+                  // h-full makes the whole column the hover target, so hovering
+                  // doesn't require landing on a 6px-tall bar.
                   className="group relative flex h-full flex-1 items-end"
                 >
-                  {/* Full-height hit target so hover doesn't require landing
-                      on a 6px-tall bar. */}
-                  <div className="absolute inset-0" aria-hidden />
                   <div
                     className="w-full rounded-t-[4px] transition-[filter] group-hover:brightness-110"
                     style={{
@@ -289,6 +291,8 @@ export function BarChart({
  * stroke into a wedge. Every text label is HTML outside the SVG, so nothing
  * scales with the box.
  */
+let trendGradientSeq = 0;
+
 export function TrendLine({
   title,
   subtitle,
@@ -296,6 +300,7 @@ export function TrendLine({
   target,
   aside,
   plotHeight = 120,
+  columns = ["Week of", "Participation"],
 }: {
   title: string;
   subtitle?: string;
@@ -304,7 +309,13 @@ export function TrendLine({
   target?: number;
   aside?: React.ReactNode;
   plotHeight?: number;
+  /** Table-view headers. Defaults suit a weekly participation series. */
+  columns?: [string, string];
 }) {
+  // Unique per instance so two TrendLines on one page don't share a <defs>
+  // entry. A module counter rather than useId(): this is a server component,
+  // and the id only has to be unique within the rendered document.
+  const gradientId = `viz-trend-fill-${(trendGradientSeq += 1)}`;
   const n = data.length;
   // An all-zero series would draw a line pinned to the axis, half of it
   // clipped by the plot edge — which reads as a broken chart rather than as
@@ -327,7 +338,7 @@ export function TrendLine({
       aside={aside}
       table={
         <TableView
-          columns={["Week of", "Participation"]}
+          columns={columns}
           rows={data.map((d) => [d.label, `${d.value}%`])}
         />
       }
@@ -366,7 +377,7 @@ export function TrendLine({
               aria-label={`${title}. Latest ${last.value}%.`}
             >
               <defs>
-                <linearGradient id="viz-trend-fill" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="0%"
                     stopColor="var(--viz-engagement)"
@@ -379,7 +390,7 @@ export function TrendLine({
                   />
                 </linearGradient>
               </defs>
-              <path d={areaPath} fill="url(#viz-trend-fill)" />
+              <path d={areaPath} fill={`url(#${gradientId})`} />
               {target != null && (
                 <line
                   x1="0"

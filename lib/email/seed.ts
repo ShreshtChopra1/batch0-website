@@ -207,34 +207,40 @@ export async function seedSystemTemplates(
     if (error) return { ...report, error: error.message };
     const have = new Set((existing ?? []).map((r: any) => r.key));
 
-    for (const t of SYSTEM_TEMPLATES) {
+    const toInsert = SYSTEM_TEMPLATES.filter((t) => {
       if (have.has(t.key)) {
         report.skipped.push(t.key);
-        continue;
+        return false;
       }
-      const { error: insertError } = await admin.from("email_templates").insert({
-        key: t.key,
-        name: t.name,
-        description: t.description,
-        category: t.category,
-        subject: t.subject,
-        preheader: t.preheader ?? null,
-        body_html: t.body_html,
-        cta_label: t.cta_label ?? null,
-        cta_url: t.cta_url ?? null,
-        variables: t.variables,
-        is_system: true,
-        enabled: true,
-        created_by: createdBy,
-        updated_by: createdBy,
-      });
-      if (insertError) {
-        console.error("[email/seed] insert failed", t.key, insertError.message);
-        report.skipped.push(t.key);
-        continue;
-      }
-      report.inserted.push(t.key);
-    }
+      return true;
+    });
+    if (toInsert.length === 0) return report;
+
+    // One insert for the whole set rather than one round trip per template.
+    const { data, error: insertError } = await admin
+      .from("email_templates")
+      .insert(
+        toInsert.map((t) => ({
+          key: t.key,
+          name: t.name,
+          description: t.description,
+          category: t.category,
+          subject: t.subject,
+          preheader: t.preheader ?? null,
+          body_html: t.body_html,
+          cta_label: t.cta_label ?? null,
+          cta_url: t.cta_url ?? null,
+          variables: t.variables,
+          is_system: true,
+          enabled: true,
+          created_by: createdBy,
+          updated_by: createdBy,
+        })),
+      )
+      .select("key");
+    if (insertError) return { ...report, error: insertError.message };
+    report.inserted.push(...(data ?? []).map((r: any) => r.key));
+
     return report;
   } catch (err: any) {
     return { ...report, error: err?.message ?? "Seed failed" };

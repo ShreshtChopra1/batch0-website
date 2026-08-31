@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Send, Unlink, XCircle, FileText } from "lucide-react";
@@ -82,8 +82,11 @@ export function QueuedEmailEditor({
   const editable = canEdit && row.status === "pending";
 
   // The preview always comes from the server so it goes through the same
-  // sanitize → interpolate → wrap path a real send does.
-  const savedRef = useRef(0);
+  // sanitize → interpolate → wrap path a real send does. `savedAt` is real
+  // state, not a ref: mutating a ref doesn't schedule a render, so using one
+  // as an effect dependency only re-ran this by accident, via the
+  // router.refresh() that happened to follow.
+  const [savedAt, setSavedAt] = useState(0);
   useEffect(() => {
     let cancelled = false;
     previewQueued(row.id)
@@ -94,7 +97,7 @@ export function QueuedEmailEditor({
     return () => {
       cancelled = true;
     };
-  }, [row.id, savedRef.current]);
+  }, [row.id, savedAt]);
 
   function run(
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -111,7 +114,7 @@ export function QueuedEmailEditor({
           return;
         }
         setNotice(successMessage);
-        savedRef.current += 1;
+        setSavedAt((n) => n + 1);
         after?.();
         router.refresh();
       } catch (err) {

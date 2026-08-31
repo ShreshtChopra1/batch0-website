@@ -99,3 +99,68 @@ export async function evaluateCondition(
   }
   return { send: true };
 }
+
+/**
+ * Evaluate one condition kind across many recipients in a single query.
+ *
+ * The per-row `evaluateCondition` above is right for a one-off send but wrong
+ * for a drain: a 200-person payment nudge ran 200 identical `payments` count
+ * queries, one per recipient, inside a cron invocation that also has to send
+ * 200 emails. This asks the same question once with an `.in(...)` and returns
+ * the set of users who FAIL the gate — i.e. who should be skipped.
+ *
+ * `no_login_since` is absent on purpose: it reads `auth.users` through
+ * `getUserById`, which has no batch form, so it stays per-row.
+ */
+export async function usersFailingCondition(
+  kind: StepConditionKind,
+  userIds: string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (userIds.length === 0 || kind === "always" || kind === "no_login_since") {
+    return out;
+  }
+  const admin = createAdminClient();
+  try {
+    if (kind === "not_paid") {
+      const { data } = await admin
+        .from("payments")
+        .select("user_id")
+        .in("user_id", userIds)
+        .eq("status", "succeeded");
+      for (const r of data ?? []) out.add((r as any).user_id);
+    } else if (kind === "not_enrolled") {
+      const { data } = await admin
+        .from("enrollments")
+        .select("user_id")
+        .in("user_id", userIds);
+      for (const r of data ?? []) out.add((r as any).user_id);
+    } else if (kind === "still_applicant") {
+      const { data } = await admin
+        .from("applications")
+        .select("user_id, status")
+        .in("user_id", userIds)
+        .in("status", ["accepted", "waitlisted", "rejected", "paid", "enrolled"]);
+      for (const r of data ?? []) out.add((r as any).user_id);
+    }
+  } catch (err) {
+    // Same posture as the per-row path: a gate we couldn't evaluate sends
+    // rather than silently eating the email.
+    console.error("[email/conditions] batch evaluation failed", kind, err);
+  }
+  return out;
+}
+
+/** The reason a batched gate skipped someone, shown on the outbox row. */
+export function skipReasonFor(kind: StepConditionKind): string {
+  switch (kind) {
+    case "not_paid":
+      return "They've since paid";
+    case "not_enrolled":
+      return "They've since enrolled";
+    case "still_applicant":
+      return "Their application has since been decided";
+    default:
+      return "A step condition excluded them";
+  }
+}

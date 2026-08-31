@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { VariableDef } from "@/lib/email/vars";
 import type { StoredTemplate } from "@/lib/email/render";
@@ -142,7 +143,12 @@ export async function listAutomations(): Promise<{
   }
 }
 
-export async function getAutomation(
+/**
+ * React-cached: the page and its generateMetadata both need this, and the
+ * admin Supabase client forces `cache: "no-store"`, so Next's own fetch dedupe
+ * doesn't apply — without this it's two identical joined queries per render.
+ */
+export const getAutomation = cache(async function getAutomation(
   id: string,
 ): Promise<(AutomationRow & { steps: AutomationStepRow[] }) | null> {
   try {
@@ -162,7 +168,7 @@ export async function getAutomation(
   } catch {
     return null;
   }
-}
+});
 
 /** Enabled event automations for one event key, steps in order. */
 export async function automationsForEvent(
