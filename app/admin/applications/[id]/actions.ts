@@ -1,10 +1,8 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  hasFounderPass,
-  FOUNDER_PASS_TUITION_DISCOUNT_CENTS,
-} from "@/lib/founder-pass";
+import { getPassGrantForUser } from "@/lib/founder-pass";
+import { grantDiscountCents } from "@/lib/founder-pass-tiers";
 import { markRebuildReviewedForUser } from "@/lib/founder-pass-perks";
 import { assertPermission } from "@/lib/server-guards";
 import { sendEmail } from "@/lib/email/send";
@@ -55,7 +53,11 @@ export async function decideApplication(
   // feedback (strongest / missing / next step); a bulk decision has none and
   // must still carry a free-text note. Either way, a form-letter "no" to a pass
   // holder is impossible.
-  const applicantHoldsPass = await hasFounderPass(admin, (app as any).user_id);
+  // The grant, not just "do they hold one": the same read answers whether
+  // structured feedback is mandatory AND what the acceptance email should
+  // quote, and reading it twice would risk the two disagreeing.
+  const applicantGrant = await getPassGrantForUser(admin, (app as any).user_id);
+  const applicantHoldsPass = applicantGrant !== null;
 
   const f = feedback ?? {};
   const strongest = (f.strongest ?? "").trim();
@@ -151,13 +153,22 @@ export async function decideApplication(
     const a = app as any;
     const cohort = Array.isArray(a.cohort) ? a.cohort[0] : a.cohort;
     const profile = Array.isArray(a.profile) ? a.profile[0] : a.profile;
+    const listPriceCents = cohort?.price_cents ?? 13000;
     if (decision === "accepted") {
-      // Holders pay $30 less (checkout applies it server-side); the
-      // acceptance email must quote the price they'll actually see.
+      // Holders pay less by their GRANT — tier plus any hand-set override
+      // (migrations 0055/0056) — and checkout applies it server-side, so the
+      // acceptance email must quote the same number it will charge.
+      //
+      // Uses the LIST price, not a regional one: this runs in an admin
+      // request, so there is no applicant geography to read here. Someone on a
+      // regional price is quoted slightly high and then charged less; the
+      // dashboard and Stripe both compute the regional figure. A full ride
+      // still resolves to $0 either way, since the discount clamps to whatever
+      // price it is given.
       const priceCents = Math.max(
         0,
-        (cohort?.price_cents ?? 13000) -
-          (applicantHoldsPass ? FOUNDER_PASS_TUITION_DISCOUNT_CENTS : 0),
+        listPriceCents -
+          (applicantGrant ? grantDiscountCents(applicantGrant, listPriceCents) : 0),
       );
       const acceptedName = a.full_name ?? profile?.full_name ?? null;
       if (profile?.email) {
