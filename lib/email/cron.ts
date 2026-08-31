@@ -164,14 +164,22 @@ export function nextRun(parsed: ParsedCron, from: Date): Date | null {
   return null;
 }
 
-/** Common schedules, offered as a dropdown so most admins never type cron. */
+/**
+ * Common schedules, offered as a dropdown so most admins never type cron.
+ *
+ * Nothing sub-hourly is offered, because nothing sub-hourly would be honoured:
+ * the drain that evaluates these runs once an hour (see the note in
+ * app/api/cron/email-queue/route.ts), so a half-hourly expression would fire
+ * once an hour and quietly mean something other than what it says. A schedule
+ * an admin can't trust is worse than one the menu declines to offer.
+ */
 export const CRON_PRESETS = [
   { value: "0 14 * * 1", label: "Weekly — Mondays at 14:00 UTC" },
   { value: "0 14 * * 5", label: "Weekly — Fridays at 14:00 UTC" },
   { value: "0 13 * * *", label: "Daily at 13:00 UTC" },
+  { value: "0 9 * * 1-5", label: "Weekdays at 09:00 UTC" },
   { value: "0 13 1 * *", label: "Monthly — 1st at 13:00 UTC" },
   { value: "0 * * * *", label: "Hourly, on the hour" },
-  { value: "*/30 * * * *", label: "Every 30 minutes" },
 ] as const;
 
 /** Best-effort English for the automations list. Falls back to the raw expr. */

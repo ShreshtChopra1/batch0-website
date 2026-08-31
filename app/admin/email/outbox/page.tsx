@@ -69,6 +69,7 @@ export default async function EmailOutboxPage() {
           <p className="mt-1 max-w-2xl text-sm text-ink-soft">
             Every automated and scheduled email, before and after it goes out.
             Anything still pending can be cancelled — once it's sent, it's sent.
+            The queue drains once an hour; “Run queue now” doesn't wait.
           </p>
         </div>
         <OutboxControls pendingCount={pendingCount} />

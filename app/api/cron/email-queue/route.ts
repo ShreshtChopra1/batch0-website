@@ -12,15 +12,24 @@ export const maxDuration = 60;
 /**
  * Drains the email outbox and fires any scheduled automation that came due.
  *
- * Every five minutes, which is the trade: a delayed drip step lands within
- * five minutes of its scheduled moment (nobody notices), and a scheduled
- * automation fires within five minutes of its cron (which is why the matcher
- * asks "were you due since you last ran?" rather than "are you due right
- * now?" — see lib/email/cron.ts).
+ * Runs hourly, via 24 separate once-a-day entries in vercel.json rather than
+ * one `0 * * * *`. That looks absurd until you hit the reason: this project is
+ * on a Vercel Hobby plan, which rejects any cron expression that fires more
+ * than once a day. Twenty-four daily expressions are each legal on their own
+ * and add up to the hourly drain the queue actually needs. Collapse them back
+ * into a single hourly expression — or a five-minute one — the moment this
+ * account moves to Pro.
  *
- * Transactional email does not wait for this. A zero-delay step sends inline
- * at the moment the event fires; the queue is only for delayed and scheduled
- * mail.
+ * Hourly is coarse, and the design already absorbs it: the schedule matcher
+ * asks "were you due at any point since you last ran?" rather than "are you
+ * due this minute?" (see `wasDue` in lib/email/cron.ts), so a 14:30 schedule
+ * still fires exactly once — on the 15:00 drain. What an admin gives up is
+ * punctuality, not delivery.
+ *
+ * Transactional email does not wait for any of this. A zero-delay step sends
+ * inline at the moment the event fires; the queue only holds delayed and
+ * scheduled mail. And /admin/email/outbox has a "Run queue now" button for
+ * anyone who doesn't want to wait for the hour.
  */
 export async function GET(req: Request) {
   // Fail closed when CRON_SECRET isn't configured. An open endpoint here
