@@ -113,7 +113,17 @@ export function EventCard({
             )}
           </div>
 
-          {upcoming && (
+          {/*
+            The join affordance is driven by the join WINDOW, not by which
+            section (Upcoming/Past) the event was filed under. An event that
+            has already started sorts as "past" by start time — but that is
+            exactly when the Join button needs to be here. Gating this on
+            `upcoming` used to make the button vanish the moment a webinar went
+            live, which is the one moment it matters. So it shows whenever the
+            room is joinable, and additionally carries the pre-start countdown
+            for events still in the Upcoming section.
+          */}
+          {(joinable || upcoming) && (
             <div className="mt-4">
               {hosted ? (
                 joinable ? (
@@ -126,14 +136,8 @@ export function EventCard({
                   </ButtonLink>
                 ) : (
                   <p className="text-xs text-ink-faint">
-                    {state === "ended" ? (
-                      "This webinar has ended."
-                    ) : (
-                      <>
-                        Opens 15 minutes before it starts
-                        {now && <> · {relativeTime(event.startsAt, now)}</>}
-                      </>
-                    )}
+                    Opens 15 minutes before it starts
+                    {now && <> · {relativeTime(event.startsAt, now)}</>}
                   </p>
                 )
               ) : event.externalUrl ? (

@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { getStudentAccess } from "@/lib/access";
 import { LockedFeature } from "@/components/dashboard/locked-feature";
 import { EventCard } from "@/components/live/event-card";
-import type { LiveEvent } from "@/lib/live";
+import { joinState, type LiveEvent } from "@/lib/live";
 
 export const metadata = { title: "Events · batch0" };
 
@@ -48,7 +48,8 @@ export default async function StudentEventsPage() {
   }
   const supabase = createClient();
 
-  const now = new Date().toISOString();
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
   const [{ data: upcoming }, { data: past }] = await Promise.all([
     supabase
       .from("events")
@@ -63,12 +64,36 @@ export default async function StudentEventsPage() {
       .limit(10),
   ]);
 
+  // An event that has already started sorts into `past` by its start time, but
+  // if its join window is still open it is happening RIGHT NOW — not over. Pull
+  // those out so a live webinar shows under "Live now" with a Join button
+  // instead of being buried, looking finished, in "Past".
+  const liveNow = (past ?? []).filter(
+    (e: any) => joinState(e.starts_at, e.ends_at, nowDate) !== "ended",
+  );
+  const endedPast = (past ?? []).filter(
+    (e: any) => joinState(e.starts_at, e.ends_at, nowDate) === "ended",
+  );
+
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="text-3xl font-bold tracking-tight">Events</h1>
       <p className="mt-1 text-sm text-ink-faint">
         Demo Day, office hours, workshops.
       </p>
+
+      {liveNow.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-red-500">
+            Live now
+          </h2>
+          <div className="space-y-3">
+            {liveNow.map((e: any) => (
+              <EventCard key={e.id} event={toLiveEvent(e)} upcoming={false} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mt-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-phosphor-ink">
@@ -87,13 +112,13 @@ export default async function StudentEventsPage() {
         )}
       </section>
 
-      {(past?.length ?? 0) > 0 && (
+      {endedPast.length > 0 && (
         <section className="mt-10">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-ink-faint">
             Past
           </h2>
           <div className="space-y-3">
-            {(past ?? []).map((e: any) => (
+            {endedPast.map((e: any) => (
               <EventCard key={e.id} event={toLiveEvent(e)} upcoming={false} />
             ))}
           </div>
