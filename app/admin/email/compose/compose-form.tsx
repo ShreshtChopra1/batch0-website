@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { Send, Clock, Users, AtSign, FileText } from "lucide-react";
+import {
+  Send,
+  Clock,
+  Users,
+  AtSign,
+  FileText,
+  GraduationCap,
+  CheckCheck,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -16,7 +25,9 @@ import {
   sendTestCompose,
   previewCompose,
   countCompose,
+  listComposeStudents,
   type ComposeDraft,
+  type ComposeStudent,
 } from "./actions";
 
 export type ComposeTemplate = { id: string; name: string; enabled: boolean };
@@ -28,6 +39,7 @@ const EMPTY: ComposeDraft = {
   segment: "students",
   cohortId: "",
   includeParents: false,
+  studentIds: [],
   templateId: "",
   subject: "",
   bodyHtml: "<p>Hi {{first_name}},</p><p></p>",
@@ -60,11 +72,61 @@ export function ComposeForm({
   const [previewHtml, setPreviewHtml] = useState("");
   const [segmentCount, setSegmentCount] = useState<number | null>(null);
 
+  // "Pick students" mode: the directory, fetched once the first time the mode
+  // is opened (the page doesn't ship it), plus a local search box. Selection
+  // itself lives in the draft as `studentIds`, so preview/count read it too.
+  const [students, setStudents] = useState<ComposeStudent[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [studentsError, setStudentsError] = useState<string | null>(null);
+  const [studentSearch, setStudentSearch] = useState("");
+
   function set<K extends keyof ComposeDraft>(k: K, val: ComposeDraft[K]) {
     setV((p) => ({ ...p, [k]: val }));
     setNotice(undefined);
     setError(undefined);
   }
+
+  const selectedStudents = useMemo(
+    () => new Set(v.studentIds),
+    [v.studentIds],
+  );
+
+  function toggleStudent(id: string) {
+    setNotice(undefined);
+    setError(undefined);
+    setV((p) => ({
+      ...p,
+      studentIds: p.studentIds.includes(id)
+        ? p.studentIds.filter((x) => x !== id)
+        : [...p.studentIds, id],
+    }));
+  }
+
+  useEffect(() => {
+    if (v.mode !== "students" || students.length > 0 || loadingStudents) return;
+    let cancelled = false;
+    setLoadingStudents(true);
+    setStudentsError(null);
+    listComposeStudents().then((res) => {
+      if (cancelled) return;
+      if (res.ok) setStudents(res.students);
+      else setStudentsError(res.error);
+      setLoadingStudents(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [v.mode]);
+
+  const filteredStudents = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter(
+      (s) =>
+        (s.name ?? "").toLowerCase().includes(q) ||
+        s.email.toLowerCase().includes(q),
+    );
+  }, [students, studentSearch]);
 
   // Recipient count, computed the same way the server will. The addresses
   // case is local (it's just parsing); the segment case has to ask the server,
@@ -88,7 +150,11 @@ export function ComposeForm({
   }, [v.mode, v.segment, v.cohortId, v.includeParents]);
 
   const recipientCount =
-    v.mode === "addresses" ? parsed.valid.length : (segmentCount ?? 0);
+    v.mode === "addresses"
+      ? parsed.valid.length
+      : v.mode === "students"
+        ? v.studentIds.length
+        : (segmentCount ?? 0);
 
   const draftRef = useRef(v);
   draftRef.current = v;
@@ -135,7 +201,7 @@ export function ComposeForm({
         setFailures(res.failed);
         // Clear the recipients but keep the copy — the usual next action is
         // "same message, different person", not "start over".
-        setV((p) => ({ ...p, to: "", scheduledFor: "" }));
+        setV((p) => ({ ...p, to: "", studentIds: [], scheduledFor: "" }));
       } catch (err) {
         setError(getActionError(err));
       }
@@ -207,6 +273,12 @@ export function ComposeForm({
                 onClick={() => set("mode", "addresses")}
               />
               <ModeChoice
+                icon={GraduationCap}
+                label="Pick students"
+                active={v.mode === "students"}
+                onClick={() => set("mode", "students")}
+              />
+              <ModeChoice
                 icon={Users}
                 label="An audience"
                 active={v.mode === "segment"}
@@ -238,6 +310,96 @@ export function ComposeForm({
                     </span>
                   )}
                 </p>
+              </div>
+            ) : v.mode === "students" ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Input
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    placeholder="Search name or email…"
+                    aria-label="Search students"
+                  />
+                  <span className="shrink-0 rounded-full border border-phosphor/40 bg-phosphor/10 px-2.5 py-0.5 text-xs font-medium tabular-nums text-phosphor-ink">
+                    {v.studentIds.length} selected
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setV((p) => ({
+                        ...p,
+                        studentIds: Array.from(
+                          new Set([
+                            ...p.studentIds,
+                            ...filteredStudents.map((s) => s.id),
+                          ]),
+                        ),
+                      }))
+                    }
+                    disabled={filteredStudents.length === 0}
+                    className="inline-flex items-center gap-1 rounded-md border border-line bg-wash px-2.5 py-1 font-medium text-ink-soft hover:border-ink/30 hover:bg-ink/[0.04] disabled:opacity-50"
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" />
+                    Select all {filteredStudents.length} shown
+                  </button>
+                  {v.studentIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => set("studentIds", [])}
+                      className="inline-flex items-center gap-1 rounded-md border border-line bg-wash px-2.5 py-1 font-medium text-ink-soft hover:border-ink/30 hover:bg-ink/[0.04]"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <ul className="max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line">
+                  {loadingStudents && (
+                    <li className="p-4 text-sm text-ink-faint">Loading students…</li>
+                  )}
+                  {!loadingStudents && studentsError && (
+                    <li className="p-4 text-sm text-red-700 dark:text-red-300">
+                      {studentsError}
+                    </li>
+                  )}
+                  {!loadingStudents &&
+                    !studentsError &&
+                    filteredStudents.length === 0 && (
+                      <li className="p-4 text-sm text-ink-faint">
+                        {students.length === 0
+                          ? "No students with an email on file."
+                          : "No students match that search."}
+                      </li>
+                    )}
+                  {filteredStudents.map((s) => (
+                    <li key={s.id}>
+                      <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-wash">
+                        <input
+                          type="checkbox"
+                          checked={selectedStudents.has(s.id)}
+                          onChange={() => toggleStudent(s.id)}
+                          className="h-4 w-4 accent-phosphor"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm text-ink">
+                            {s.name || s.email}
+                          </span>
+                          <span className="block truncate text-xs text-ink-faint">
+                            {s.email}
+                            {s.appStatus ? ` · ${s.appStatus}` : ""}
+                            {s.cohorts.length > 0
+                              ? ` · ${s.cohorts.join(", ")}`
+                              : ""}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : (
               <div className="space-y-3">
@@ -448,9 +610,11 @@ export function ComposeForm({
         description={
           v.mode === "addresses"
             ? `Going to ${parsed.valid.length} address${parsed.valid.length === 1 ? "" : "es"}: ${parsed.valid.slice(0, 5).join(", ")}${parsed.valid.length > 5 ? `, and ${parsed.valid.length - 5} more` : ""}.`
-            : `Going to every address in "${
-                AUDIENCE_SEGMENTS.find((s) => s.value === v.segment)?.label ?? v.segment
-              }" — ${segmentCount ?? "…"} right now.`
+            : v.mode === "students"
+              ? `Going to ${v.studentIds.length} hand-picked student${v.studentIds.length === 1 ? "" : "s"}, personalized by name.`
+              : `Going to every address in "${
+                  AUDIENCE_SEGMENTS.find((s) => s.value === v.segment)?.label ?? v.segment
+                }" — ${segmentCount ?? "…"} right now.`
         }
         confirmLabel={v.scheduledFor ? "Schedule it" : "Send it"}
         pending={pending}
