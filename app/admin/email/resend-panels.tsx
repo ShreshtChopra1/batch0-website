@@ -114,7 +114,9 @@ export async function ProviderDiagnostics({
         can never fire and every engagement rate below will read zero no matter
         how the mail performs. Turn it on under{" "}
         <strong>Domains → {names[0]}</strong> in the Resend dashboard; only mail
-        sent afterwards reports.
+        sent afterwards reports. Domain settings were last read at{" "}
+        <LocalTime value={insights.configFetchedAt} mode="time" /> and are held
+        for ten minutes, so this notice outlives the fix by a few minutes.
       </Problem>,
     );
   }
@@ -456,7 +458,10 @@ export async function ProviderFunnelPanel() {
             only at its final state, so opens here read slightly low against the
             webhook numbers above.
             {insights.emailsTruncated &&
-              ` Only the ${(EMAIL_PAGE_CAP).toLocaleString()} most recent messages were paged through.`}
+              ` Only the ${(EMAIL_PAGE_CAP).toLocaleString()} most recent messages were paged through.`}{" "}
+            Read from Resend at{" "}
+            <LocalTime value={insights.fetchedAt} mode="time" />; cached for a
+            few minutes so a reload doesn&rsquo;t re-fetch the account.
           </p>
         </div>
 
@@ -529,7 +534,11 @@ export async function DomainsPanel() {
             </span>
           </div>
           {d.records.length === 0 ? (
-            <EmptyNote>Resend returned no DNS records for this domain.</EmptyNote>
+            <EmptyNote>
+              {d.recordsFetched
+                ? "Resend returned no DNS records for this domain."
+                : "Verified, so the DNS records weren't fetched — they're only worth a round trip when one of them is failing. They stay available in the Resend dashboard."}
+            </EmptyNote>
           ) : (
             <TableShell
               head={
@@ -725,7 +734,7 @@ export async function AudiencesPanel() {
     <>
       <SectionHeading
         title="Audiences"
-        hint="Contact lists held in Resend. The app's own recipient lists are built from Supabase, so these are only populated if someone imported contacts."
+        hint="Contact lists held in Resend. The app's own recipient lists are built from Supabase, so these are only populated if someone imported contacts. Sizes live in the Resend dashboard — counting them here cost a request per segment to render a capped number."
       />
       <Card className="!p-0 overflow-hidden">
         <TableShell
@@ -733,7 +742,6 @@ export async function AudiencesPanel() {
             <>
               <th className="px-5 py-3">Segment</th>
               <th className="px-5 py-3">Created</th>
-              <th className="px-5 py-3 text-right">Contacts</th>
             </>
           }
         >
@@ -745,9 +753,6 @@ export async function AudiencesPanel() {
               </td>
               <td className="px-5 py-3 text-xs text-ink-soft">
                 <LocalTime value={s.createdAt} mode="date" />
-              </td>
-              <td className="px-5 py-3 text-right tabular-nums text-ink-soft">
-                {s.contacts === null ? "—" : s.contacts >= 100 ? "100+" : s.contacts}
               </td>
             </tr>
           ))}
