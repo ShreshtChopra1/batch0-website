@@ -4,18 +4,19 @@ import { assertPermission } from "@/lib/server-guards";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAudit } from "@/lib/audit";
 import { sendEmail } from "@/lib/email/send";
-import { Templates } from "@/lib/email/templates";
+import { Templates, passRedeemUrl } from "@/lib/email/templates";
 import { nextBatchDefaults } from "@/lib/founder-pass-batch";
 import { passHolderUserIds } from "@/lib/founder-pass";
 import {
   DEFAULT_TIER,
+  formatCents,
   grantOf,
   grantPerkLines,
   parseDollarsToCents,
   passTier,
 } from "@/lib/founder-pass-tiers";
 import { STATUS_RANK } from "@/app/admin/email/blast/shared";
-import { parseEmailList } from "./shared";
+import { parseEmailList, INVITE_TEMPLATE_KEY } from "./shared";
 import {
   hashPassCode,
   mintPassCode,
@@ -31,6 +32,17 @@ export type IssuedPass = {
   code: string;
   email: string;
   name: string | null;
+  /**
+   * The same one-click redeem link the email carries.
+   *
+   * Here as well as in the inbox because delivery and redemption are separate
+   * things that fail separately: an admin testing the flow, or handing a code
+   * to someone standing in front of them, needs to be able to open the holder
+   * experience without waiting on a mail server. It is not a second source of
+   * truth — templates.founderPassInvite builds the same URL from the same
+   * code — and it is no more sensitive than the code printed beside it.
+   */
+  redeemUrl: string;
 };
 
 export type IssueResult =
@@ -164,6 +176,41 @@ export async function getPassRecipients(
   return { ok: true, recipients };
 }
 
+/**
+ * Which of these addresses belong to an account that already holds a live pass.
+ *
+ * The picker greys those people out, but the check has to exist server-side as
+ * well, and for both addressing modes: the typed-address path never saw that
+ * list at all, and a client left open for ten minutes would happily post an id
+ * the picker disabled after the person redeemed something.
+ *
+ * Matched on the lowercased address, which is how profiles.email is written
+ * everywhere in this app. A row stored with different casing would slip
+ * through — that is a miss, not a wrong answer: the send behaves exactly as it
+ * did before this check existed.
+ */
+async function holdersAmong(
+  admin: ReturnType<typeof createAdminClient>,
+  emails: string[],
+): Promise<string[]> {
+  const wanted = Array.from(new Set(emails.map((e) => e.toLowerCase())));
+  if (wanted.length === 0) return [];
+  const { data } = await admin
+    .from("profiles")
+    .select("id, email")
+    .in("email", wanted);
+  const rows = (data ?? []) as Array<{ id: string; email: string | null }>;
+  if (rows.length === 0) return [];
+  const held = await passHolderUserIds(
+    admin,
+    rows.map((r) => r.id),
+  );
+  return rows
+    .filter((r) => held.has(r.id))
+    .map((r) => (r.email ?? "").toLowerCase())
+    .filter(Boolean);
+}
+
 /** Where a send's addresses come from. */
 export type PassRecipientInput =
   | { mode: "emails"; emails: string }
@@ -258,6 +305,31 @@ export async function issueVirtualPassesAction(input: {
     }));
   }
 
+  // ---- Nobody who already holds one.
+  //
+  // redeemPass refuses a second pass per account ("already_have_pass"), so a
+  // code sent to an existing holder is dead on arrival and its serial is spent
+  // for nothing. Refusing the whole send rather than quietly dropping those
+  // addresses: sending four passes when the box listed five, and never
+  // mentioning the fifth, is how someone ends up believing a pass is sitting
+  // in an inbox that never received one.
+  const alreadyHold = await holdersAmong(
+    admin,
+    people.map((p) => p.email),
+  );
+  if (alreadyHold.length) {
+    return {
+      ok: false,
+      error:
+        `${alreadyHold.slice(0, 3).join(", ")}${
+          alreadyHold.length > 3 ? ` (+${alreadyHold.length - 3} more)` : ""
+        } already ${alreadyHold.length === 1 ? "holds" : "hold"} a live founder pass. ` +
+        `One account can only hold one, so a second code could never be redeemed — ` +
+        `take ${alreadyHold.length === 1 ? "them" : "those"} out and send the rest, ` +
+        `or revoke the pass they have first.`,
+    };
+  }
+
   // ---- How many each.
   const perRecipient = Math.trunc(input.perRecipient ?? 1);
   if (!Number.isFinite(perRecipient) || perRecipient < 1 || perRecipient > MAX_PER_RECIPIENT) {
@@ -301,11 +373,16 @@ export async function issueVirtualPassesAction(input: {
   let offset = 0;
   for (const person of people) {
     for (let i = 0; i < perRecipient; i++) {
+      const code = normalizePassCode(mintPassCode());
       passes.push({
         serial: start + offset++,
-        code: normalizePassCode(mintPassCode()),
+        code,
         email: person.email,
         name: person.name,
+        // Built from the same helper the email's button uses, so the link the
+        // admin can click here and the link the recipient clicks are the same
+        // URL by construction rather than by two people remembering to.
+        redeemUrl: passRedeemUrl(code),
       });
     }
   }
@@ -367,7 +444,17 @@ export async function issueVirtualPassesAction(input: {
       recipientName: p.name,
       note,
     });
-    const r = await sendEmail({ to: p.email, subject: t.subject, html: t.html, text: t.text });
+    const r = await sendEmail({
+      to: p.email,
+      subject: t.subject,
+      html: t.html,
+      text: t.text,
+      // Tags the message for /admin/email's metrics the same way every other
+      // send in the app does. Without it a pass invite is the one transactional
+      // email the delivery dashboard can't see — and a bounced invite is a live
+      // serial nobody can redeem, which is exactly the failure worth spotting.
+      templateKey: INVITE_TEMPLATE_KEY,
+    });
     if (r.ok) sent.push(p.serial);
     else failed.push({ serial: p.serial, reason: r.reason ?? "unknown" });
   }
@@ -410,7 +497,7 @@ export async function issueVirtualPassesAction(input: {
     return {
       ok: false,
       error: disabled
-        ? "Email isn't configured in this environment (RESEND_API_KEY is unset), so nothing was sent. The passes were revoked — no serials are stranded."
+        ? "No email transport is configured, so nothing was sent. Set RESEND_API_KEY, or connect a mailbox at /admin/email/settings. The passes were revoked — no serials are stranded."
         : `Nothing was sent (${failed[0]?.reason ?? "unknown error"}). Those passes were revoked, so it's safe to try again.`,
     };
   }
@@ -434,14 +521,21 @@ export async function issueVirtualPassesAction(input: {
   };
 }
 
-/** "founding" / "standard, $45 off" — for the confirmation line. */
+/**
+ * "founding" / "standard, $45 off" — for the confirmation line.
+ *
+ * Through formatCents rather than a local toFixed(0): rounding to whole
+ * dollars here would report a $45.50 override back as "$45 off", which is the
+ * admin's only confirmation of a number they typed and cannot change
+ * afterwards.
+ */
 function grantDescription(grant: {
   tier: { label: string };
   discountCents: number | null;
 }): string {
   const base = grant.tier.label.toLowerCase();
   if (grant.discountCents === null) return base;
-  return `${base}, $${(grant.discountCents / 100).toFixed(0)} off`;
+  return `${base}, ${formatCents(grant.discountCents)} off`;
 }
 
 /**

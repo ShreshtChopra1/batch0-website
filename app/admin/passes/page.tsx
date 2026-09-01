@@ -1,10 +1,14 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { nextBatchDefaults } from "@/lib/founder-pass-batch";
 import { onshapeConfigFromEnv } from "@/lib/onshape";
 import { env } from "@/lib/env";
-import { passTier } from "@/lib/founder-pass-tiers";
+import { transportStatus } from "@/lib/email/send";
+import { passTier, normalizeDiscountCents } from "@/lib/founder-pass-tiers";
 import { PassesPanel, type PassRow, type BatchSummary } from "./passes-panel";
+import { SelfTestPanel } from "./self-test-panel";
+import { SELFTEST_BATCH } from "./shared";
 
 export const metadata = { title: "Founder passes · Admin" };
 export const dynamic = "force-dynamic";
@@ -33,7 +37,7 @@ export default async function AdminPassesPage() {
     .select("*")
     .order("serial", { ascending: true });
 
-  const raw = (data ?? []) as Array<{
+  const raw = ((data ?? []) as Array<{
     serial: number;
     batch: string;
     redeemed_by: string | null;
@@ -48,7 +52,14 @@ export default async function AdminPassesPage() {
     // Migration 0055, optional for the same reason.
     tier?: string | null;
     recipient_name?: string | null;
-  }>;
+    // Migration 0056.
+    discount_cents?: number | null;
+  }>)
+    // Self-check probe rows are not passes: negative serial, nobody's name on
+    // them, deleted as soon as the check that made them finishes. They only
+    // ever appear here if a run died mid-way, and listing them would put a
+    // "#-1 Revoke" row in the ledger. The test panel reports and clears them.
+    .filter((r) => r.batch !== SELFTEST_BATCH);
 
   // Resolve holder names in one query rather than per row — same batching the
   // applications queue uses for referrers.
@@ -84,6 +95,11 @@ export default async function AdminPassesPage() {
     // passTier() resolves an absent or unrecognised key to standard, which is
     // exactly what a pre-0055 row is.
     tier: passTier(r.tier).key,
+    // The hand-set override (0056). It belongs in the ledger for the same
+    // reason the tier does: it is money off someone's tuition that nobody can
+    // reconstruct later — the admin's screen at issue time was the only place
+    // it was ever shown, and that screen is gone on refresh.
+    discountCents: normalizeDiscountCents(r.discount_cents),
   }));
 
   const batches: BatchSummary[] = Array.from(
@@ -112,7 +128,37 @@ export default async function AdminPassesPage() {
   // The same self-explanation for the virtual side. Emailing a pass needs no
   // Onshape at all — just a mailer and the pepper — which is exactly why it
   // works in environments where minting cards doesn't.
-  const canEmail = !!process.env.RESEND_API_KEY && !!process.env.FOUNDER_PASS_PEPPER;
+  //
+  // Through transportStatus(), NOT process.env.RESEND_API_KEY. Which mailer is
+  // live is a database setting an admin chooses at /admin/email/settings, and
+  // this site sends over SMTP — so reading the Resend key directly disabled
+  // the send button on a perfectly working install and made the whole feature
+  // unreachable in production. transportStatus is the one place that knows,
+  // and it is what /admin/email/settings reports from.
+  const transport = await transportStatus();
+  const hasPepper = !!process.env.FOUNDER_PASS_PEPPER;
+  const canEmail = transport.ok && hasPepper;
+  const emailDetail = !hasPepper
+    ? "FOUNDER_PASS_PEPPER isn't set in this environment, so no code can be hashed here."
+    : transport.ok
+      ? transport.detail
+      : `${transport.detail} Fix it at /admin/email/settings.`;
+
+  // The admin's own address, as the default target for a live drill. Sending
+  // the test to yourself is the only version of this that is safe to get
+  // wrong, so it should be the one you don't have to type.
+  const {
+    data: { user },
+  } = await createClient().auth.getUser();
+  let selfEmail = env.contactEmail;
+  if (user) {
+    const { data: me } = await admin
+      .from("profiles")
+      .select("email")
+      .eq("id", user.id)
+      .maybeSingle();
+    selfEmail = (me as { email: string | null } | null)?.email || env.contactEmail;
+  }
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -136,8 +182,17 @@ export default async function AdminPassesPage() {
         nextVirtualBatch={nextVirtual.batch}
         canMint={canMint}
         canEmail={canEmail}
+        emailDetail={emailDetail}
         contactEmail={env.contactEmail}
       />
+
+      <div className="mt-6">
+        <SelfTestPanel
+          canEmail={canEmail}
+          emailDetail={emailDetail}
+          defaultEmail={selfEmail}
+        />
+      </div>
 
       <Card className="mt-8">
         <h2 className="text-sm font-semibold text-ink">If a code list leaks</h2>

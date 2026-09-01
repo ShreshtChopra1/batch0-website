@@ -7,6 +7,19 @@ import { emailLayout as layout, escapeEmail as escape } from "@/lib/email/layout
 // inside the same chrome. See lib/email/render.ts for the database path.
 
 /**
+ * The one-click link that opens /pass with a code already filled in.
+ *
+ * Exported rather than inlined in founderPassInvite because the admin panel
+ * shows the same link beside each freshly-issued code, so an admin can walk
+ * the holder flow without waiting on a mail server. Two hand-built copies of
+ * this string is exactly how the button in someone's inbox ends up pointing
+ * somewhere the tested link doesn't.
+ */
+export function passRedeemUrl(code: string): string {
+  return `${env.siteUrl}/pass?code=${encodeURIComponent(code)}`;
+}
+
+/**
  * The brushed-silver Founder Pass card, as an email-safe table.
  *
  * Every email client is a different browser from 2003, so the "shine" and the
@@ -304,7 +317,7 @@ ${env.siteUrl}`,
     recipientName?: string | null;
     note?: string | null;
   }) => {
-    const redeemUrl = `${env.siteUrl}/pass?code=${encodeURIComponent(args.code)}`;
+    const redeemUrl = passRedeemUrl(args.code);
     const serialLabel = `#${String(args.serial).padStart(3, "0")}`;
     const first = (args.recipientName ?? "").trim().split(/\s+/)[0] ?? "";
     const greeting = first ? `Hi ${escape(first)},` : "Hi,";
