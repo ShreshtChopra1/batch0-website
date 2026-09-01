@@ -18,6 +18,7 @@ import {
   EMAIL_PAGE_CAP,
   REQUIRED_WEBHOOK_EVENTS,
   OPTIONAL_WEBHOOK_EVENTS,
+  isRestrictedKeyError,
 } from "@/lib/email/resend-insights";
 import {
   Chip,
@@ -244,22 +245,62 @@ export async function ProviderDiagnostics({
   }
 
   // --- API errors -----------------------------------------------------------
-  if (insights.errors.length > 0) {
+  //
+  // A sending-only key is pulled out of the error list and named, because as a
+  // generic entry it was actively misleading: five endpoints failing at once
+  // with one identical message, under a heading that blamed the Resend plan.
+  // The plan is not the cause and upgrading it would change nothing.
+  const restricted = insights.errors.filter((e) => isRestrictedKeyError(e.message));
+  const otherErrors = insights.errors.filter((e) => !isRestrictedKeyError(e.message));
+
+  if (insights.keyRestricted) {
+    problems.push(
+      <Problem
+        key="restricted-key"
+        tone="warn"
+        title="RESEND_API_KEY can only send mail — it can't read anything back."
+      >
+        A Resend key is created with either <em>Full access</em> or{" "}
+        <em>Sending access</em>, and this one has Sending access. Resend answers{" "}
+        <code className="font-mono text-phosphor-ink">401 restricted_api_key</code>{" "}
+        on every management endpoint, which is why{" "}
+        {restricted.map((e, i) => (
+          <span key={e.source}>
+            {i > 0 && (i === restricted.length - 1 ? " and " : ", ")}
+            <code className="font-mono text-phosphor-ink">{e.source}</code>
+          </span>
+        ))}{" "}
+        are blank.{" "}
+        <strong className="text-ink">
+          Nothing is broken and no mail is affected
+        </strong>{" "}
+        — sending uses the one permission this key does have, and the
+        webhook-derived numbers on this page come from our own database, not
+        from Resend. To fill the empty panels, set the key&rsquo;s permission to
+        Full access in the Resend dashboard under <em>API Keys</em> (or create a
+        new Full access key), then update{" "}
+        <code className="font-mono text-phosphor-ink">RESEND_API_KEY</code> in
+        Vercel and redeploy.
+      </Problem>,
+    );
+  }
+
+  if (otherErrors.length > 0) {
     problems.push(
       <Problem
         key="api-errors"
         tone="default"
-        title={`${insights.errors.length} Resend API call${insights.errors.length === 1 ? "" : "s"} didn't return.`}
+        title={`${otherErrors.length} Resend API call${otherErrors.length === 1 ? "" : "s"} didn't return.`}
       >
         <ul className="mt-1 space-y-0.5">
-          {insights.errors.slice(0, 5).map((e, i) => (
+          {otherErrors.slice(0, 5).map((e, i) => (
             <li key={i} className="font-mono text-[11px]">
               {e.source}: {e.message}
             </li>
           ))}
         </ul>
-        Panels fed by those calls are missing rather than wrong — some endpoints
-        aren&rsquo;t available on every Resend plan.
+        Panels fed by those calls are missing rather than wrong. A timeout is
+        worth retrying; anything else is quoted from Resend above.
       </Problem>,
     );
   }
@@ -780,9 +821,15 @@ export async function ApiHealthPanel() {
     return (
       <Card className="mt-3">
         <p className="text-sm text-ink-soft">
-          {insights.available
-            ? "Resend returned no recent API calls. The Logs API isn't available on every plan."
-            : (insights.reason ?? "API logs couldn't be read from Resend.")}
+          {/* Order matters: a sending-only key produces an empty log list for a
+              reason that has nothing to do with the plan, and it is the more
+              likely of the two by far. Only claim "plan" once the key has been
+              ruled out. */}
+          {insights.keyRestricted
+            ? "The Logs API refused this key — RESEND_API_KEY has Sending access, not Full access. See the note above the funnel."
+            : insights.available
+              ? "Resend returned no recent API calls. The Logs API isn't available on every plan."
+              : (insights.reason ?? "API logs couldn't be read from Resend.")}
         </p>
       </Card>
     );

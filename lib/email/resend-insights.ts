@@ -127,6 +127,30 @@ export type SegmentInsight = { id: string; name: string; createdAt: string };
 
 export type InsightError = { source: string; message: string };
 
+/**
+ * Resend's `restricted_api_key` error, which arrives as a 401 with the literal
+ * message "This API key is restricted to only send emails."
+ *
+ * A Resend key carries one of two permissions: `full_access` or
+ * `sending_access`. A sending-access key does exactly what its name says —
+ * `emails.send()` works perfectly — but every management endpoint this module
+ * reads (domains, webhooks, segments, broadcasts, logs, the email list) returns
+ * this error instead of data.
+ *
+ * It is worth detecting by name rather than lumping in with the other API
+ * failures, because it is the one cause whose symptom is *five identical
+ * errors at once* and whose fix is neither a retry nor a plan upgrade — it is
+ * one setting on the key. The panel used to blame the account's Resend plan,
+ * which sends an admin to the billing page for a permission checkbox.
+ *
+ * Matched on the message because the SDK's `{ error }` shape surfaces the
+ * text; `name`/`statusCode` are not reliably present on every path through
+ * `attempt()` (transport throws come through `message(err)` as a bare string).
+ */
+export function isRestrictedKeyError(message: string): boolean {
+  return /restricted to only send emails/i.test(message);
+}
+
 export type ResendInsights = {
   available: boolean;
   /** Why there is no data, when there isn't any. */
@@ -144,6 +168,13 @@ export type ResendInsights = {
   apiCalls: ApiCallInsight[];
   segments: SegmentInsight[];
   errors: InsightError[];
+  /**
+   * The API key is sending-only, so every read-back endpoint is refusing.
+   * Distinct from `!available`: mail is going out fine and the webhook-derived
+   * numbers are untouched — only the provider-side panels are dark, and the
+   * fix is a key permission rather than anything about this app.
+   */
+  keyRestricted: boolean;
 };
 
 function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
@@ -481,11 +512,13 @@ export async function getResendInsights(): Promise<ResendInsights> {
       apiCalls: [],
       segments: [],
       errors: [],
+      keyRestricted: false,
     };
   }
 
   const [config, activity] = await Promise.all([configTier.get(), activityTier.get()]);
   const errors = [...config.errors, ...activity.errors];
+  const keyRestricted = errors.some((e) => isRestrictedKeyError(e.message));
   const nothing =
     config.domains.length === 0 &&
     config.webhooks.length === 0 &&
@@ -496,9 +529,17 @@ export async function getResendInsights(): Promise<ResendInsights> {
     // every endpoint worked. An account on a plan without the Logs API should
     // still see its domains and its delivery funnel.
     available: !nothing,
+    // A restricted key is the one failure mode where the raw provider message
+    // is actively misleading on its own — "This API key is restricted to only
+    // send emails" reads like a statement about the account, not an instruction
+    // — so it gets replaced with the thing to go and do. Every other reason is
+    // still quoted verbatim, because the provider's own words are usually the
+    // most specific ones available.
     reason: nothing
-      ? (errors[0]?.message ??
-        "The API key is set, but this account has no domains, webhooks, or sent mail.")
+      ? keyRestricted
+        ? "RESEND_API_KEY is a sending-only key, so Resend refuses every read-back endpoint. Give the key Full access in the Resend dashboard."
+        : (errors[0]?.message ??
+          "The API key is set, but this account has no domains, webhooks, or sent mail.")
       : null,
     fetchedAt: new Date(activityTier.at() ?? Date.now()).toISOString(),
     configFetchedAt: new Date(configTier.at() ?? Date.now()).toISOString(),
@@ -510,6 +551,7 @@ export async function getResendInsights(): Promise<ResendInsights> {
     broadcasts: activity.broadcasts,
     apiCalls: activity.apiCalls,
     errors,
+    keyRestricted,
   };
 }
 
