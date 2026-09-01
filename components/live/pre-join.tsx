@@ -78,9 +78,16 @@ export function PreJoin({
                 <p className="mt-3 text-sm font-medium text-ink">
                   You&rsquo;re joining as a viewer
                 </p>
+                {/*
+                  Deliberately does not promise chat. In a webinar the viewer
+                  is a hidden participant, which in Daily means they can read
+                  chat but not send it — so the Q&A panel is their channel, and
+                  the caller passes the copy that says so. This is the generic
+                  fallback for a viewer with no Q&A alongside.
+                */}
                 <p className="mt-1 text-xs text-ink-soft">
-                  Your camera and microphone stay off. You&rsquo;ll be able to
-                  watch and use the chat.
+                  Your camera and microphone stay off, and nobody can see who
+                  else is watching.
                 </p>
               </div>
             </div>

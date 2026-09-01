@@ -29,23 +29,32 @@ export default async function EventLivePage({
   params: { id: string };
 }) {
   await requireUser();
-  const profile = await getProfile();
-  const caps = await getCapabilities();
 
-  // Read through the RLS-scoped client, NOT the admin client. The `events
-  // read` policy (migration 0005) already encodes exactly who may see this
-  // event — public, staff, or enrolled in its cohort — so letting it answer
-  // means the join gate and the visibility gate cannot disagree. A viewer who
-  // isn't allowed gets no row, and therefore a 404 rather than a hint that
-  // the event exists.
+  // Who is asking and what they're asking for are independent questions, so
+  // ask them at once. This page is on the critical path of "the webinar has
+  // started and I am clicking Join", and it used to serialise four round trips
+  // — auth, profile, capabilities, event — before it could even begin minting
+  // a token. getProfile/getCapabilities are request-cached and share a single
+  // resolution, so the pair costs one trip, not two.
+  //
+  // The event is read through the RLS-scoped client, NOT the admin client. The
+  // `events read` policy (migration 0005) already encodes exactly who may see
+  // this event — public, staff, or enrolled in its cohort — so letting it
+  // answer means the join gate and the visibility gate cannot disagree. A
+  // viewer who isn't allowed gets no row, and therefore a 404 rather than a
+  // hint that the event exists.
   const supabase = createClient();
-  const { data: event } = await supabase
-    .from("events")
-    .select(
-      "id, title, description, type, starts_at, ends_at, live_mode, daily_room_name, daily_room_url",
-    )
-    .eq("id", params.id)
-    .maybeSingle();
+  const [profile, caps, { data: event }] = await Promise.all([
+    getProfile(),
+    getCapabilities(),
+    supabase
+      .from("events")
+      .select(
+        "id, title, description, type, starts_at, ends_at, live_mode, daily_room_name, daily_room_url",
+      )
+      .eq("id", params.id)
+      .maybeSingle(),
+  ]);
 
   if (!event) notFound();
   const ev = event as any;
@@ -104,25 +113,30 @@ export default async function EventLivePage({
         new Date(ev.starts_at).getTime() + DEFAULT_EVENT_MINUTES * 60_000,
       );
 
-  const token = await mintToken({
-    roomName: ev.daily_room_name,
-    userId: profile?.id ?? "unknown",
-    userName: profile?.full_name || "Guest",
-    role,
-    // Slightly past the end so the call can overrun, but not open-ended.
-    expiresAt: new Date(end.getTime() + 60 * 60 * 1000),
-  });
-
-  // Seed the Q&A panel. The host sees the whole queue; a viewer sees only their
-  // own questions — the same split the panel's polling keeps to, so the first
-  // paint already respects the audience-privacy rule rather than briefly
-  // showing more than it should.
-  const initialQuestions =
+  // Minting a token is an HTTP call to Daily; seeding the Q&A panel is a query
+  // against our own database. Neither needs the other's answer, and running
+  // them together takes the slower of the two off the critical path instead of
+  // adding it to the total.
+  //
+  // The Q&A seed keeps the audience-privacy split from the first paint: the
+  // host gets the whole queue, a viewer only ever gets their own questions —
+  // the same rule the panel's polling enforces, so nothing is briefly visible
+  // that then disappears.
+  const [token, initialQuestions] = await Promise.all([
+    mintToken({
+      roomName: ev.daily_room_name,
+      userId: profile?.id ?? "unknown",
+      userName: profile?.full_name || "Guest",
+      role,
+      // Slightly past the end so the call can overrun, but not open-ended.
+      expiresAt: new Date(end.getTime() + 60 * 60 * 1000),
+    }),
     role === "host"
-      ? await listQuestionsForEvent(ev.id)
+      ? listQuestionsForEvent(ev.id)
       : profile
-        ? await listQuestionsForAsker(ev.id, profile.id)
-        : [];
+        ? listQuestionsForAsker(ev.id, profile.id)
+        : Promise.resolve([]),
+  ]);
 
   return (
     <LiveRoom
