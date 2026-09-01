@@ -53,6 +53,11 @@ export const env = {
   // appears in every room URL the client connects to. On its own it grants
   // nothing, because rooms are private and joining needs a minted token.
   dailyDomain: process.env.NEXT_PUBLIC_DAILY_DOMAIN,
+  // Cloud recording is a PAID Daily feature — a free plan rejects room and
+  // token creation outright if `enable_recording: "cloud"` is set. Off by
+  // default so webinars work on any plan; set DAILY_ENABLE_RECORDING=true once
+  // the account is on a plan that includes recording, and hosts can record.
+  dailyRecording: process.env.DAILY_ENABLE_RECORDING === "true",
 
   discordBotToken: process.env.DISCORD_BOT_TOKEN,
   discordGuildId: process.env.DISCORD_GUILD_ID,

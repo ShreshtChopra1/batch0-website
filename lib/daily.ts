@@ -153,7 +153,12 @@ export async function createRoom({
         // own Q&A instead (webinar_questions, 0059), which keeps them hidden.
         enable_chat: mode === "meeting",
         enable_prejoin_ui: false, // we ship our own green room (PreJoin)
-        enable_recording: enableRecording ? "cloud" : undefined,
+        // Cloud recording is paid — a free plan 400s the whole room create if
+        // this is set at all. So it's requested only when a caller wants it AND
+        // the account is configured for it (env.dailyRecording). Omitted, not
+        // set to false: `undefined` keys drop out of the JSON entirely.
+        enable_recording:
+          enableRecording && env.dailyRecording ? "cloud" : undefined,
         // Above 50 participants Daily requires this, and it is required for
         // Prebuilt specifically. Harmless on small calls.
         experimental_optimize_large_calls: mode === "webinar",
@@ -217,8 +222,13 @@ export async function mintToken({
         // participants() for everyone else and cannot send media. Without
         // this, hiding the roster in CallStage is defeated by devtools.
         ...(isHost ? {} : { permissions: { hasPresence: false } }),
-        // Only owners may start a recording.
-        enable_recording: isHost ? "cloud" : false,
+        // Only owners may start a recording, and only when the plan allows it.
+        // Set to "cloud" solely for a host on a recording-enabled account;
+        // otherwise omitted, because a free plan rejects a token that carries
+        // enable_recording at all.
+        ...(isHost && env.dailyRecording
+          ? { enable_recording: "cloud" as const }
+          : {}),
       },
     },
   });
