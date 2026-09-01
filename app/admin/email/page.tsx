@@ -126,6 +126,21 @@ export default async function AdminEmailMetricsPage() {
   const uniqueOpened = openedEmails.size;
   const uniqueClicked = clickedEmails.size;
 
+  // "0% open rate" has two very different causes that looked identical: nobody
+  // opened the mail, or Resend isn't tracking opens at all. Open/click tracking
+  // is OFF by default per-domain in Resend — with it off, Resend never injects
+  // the pixel or rewrites links, so email.opened / email.clicked simply never
+  // fire, no matter what the webhook subscribes to. The tell is deliveries
+  // landing while opens AND clicks stay flat at zero: real audiences always
+  // open *some* mail, so a handful of delivered emails with not one open is
+  // tracking being off, not an unlucky streak. Threshold keeps a single
+  // genuinely-unopened send from raising a false alarm.
+  const trackingLikelyOff =
+    webhookConfigured &&
+    deliveredDenom >= 3 &&
+    uniqueOpened === 0 &&
+    uniqueClicked === 0;
+
   // Per-template breakdown — group by normalized subject. Each "send"
   // is keyed by the resend_email_id so we don't double-count when the
   // delivered event arrives.
@@ -172,6 +187,21 @@ export default async function AdminEmailMetricsPage() {
     .sort((a, b) => b.sent + b.delivered - (a.sent + a.delivered));
 
   // Daily chart series — last 14 days, sent + opened side by side.
+  //
+  // Counted the SAME WAY the hero tiles above count, which it previously
+  // wasn't, and the mismatch made the chart lie in both directions at once:
+  //
+  //   - "sent" incremented on BOTH email.sent and email.delivered, so every
+  //     ordinary message — which fires both — was counted twice. The bar was
+  //     roughly double the real send volume.
+  //   - "opened" counted raw open events, so one person opening the same mail
+  //     five times looked like five opens, while the tile beside it showed
+  //     unique opens.
+  //
+  // Together those made "tall sent bars with short opens" — the exact reading
+  // the caption asks for — appear on days with perfectly healthy engagement.
+  // Both series now dedupe by resend_email_id, matching deliveredDenom and
+  // uniqueOpened exactly.
   const days: { key: string; sent: number; opened: number }[] = [];
   for (let i = 13; i >= 0; i--) {
     const d = new Date();
@@ -183,13 +213,29 @@ export default async function AdminEmailMetricsPage() {
     });
   }
   const dayIdx = new Map(days.map((d, i) => [d.key, i] as const));
+  // One message counts once per series per day. Keyed by day too, not just by
+  // email id: an open on Tuesday of a mail sent Monday is a real Tuesday open.
+  const countedSends = new Set<string>();
+  const countedOpens = new Set<string>();
   for (const r of rows) {
     const k = r.occurred_at.slice(0, 10);
     const idx = dayIdx.get(k);
     if (idx == null) continue;
-    if (r.event_type === "email.sent" || r.event_type === "email.delivered")
+    // An event with no resend_email_id can't be deduped, so it falls back to
+    // its own identity and is counted once — dropping it would undercount
+    // sends made before the id was recorded.
+    const id = r.resend_email_id ?? `${r.event_type}:${r.occurred_at}`;
+    if (r.event_type === "email.sent" || r.event_type === "email.delivered") {
+      const key = `${k}:${id}`;
+      if (countedSends.has(key)) continue;
+      countedSends.add(key);
       days[idx].sent++;
-    else if (r.event_type === "email.opened") days[idx].opened++;
+    } else if (r.event_type === "email.opened") {
+      const key = `${k}:${id}`;
+      if (countedOpens.has(key)) continue;
+      countedOpens.add(key);
+      days[idx].opened++;
+    }
   }
   const maxDay = Math.max(1, ...days.map((d) => Math.max(d.sent, d.opened)));
 
@@ -269,6 +315,40 @@ export default async function AdminEmailMetricsPage() {
 
       {setupNotice}
 
+      {trackingLikelyOff && (
+        <Card className="mt-6 border-amber-500/30 bg-amber-500/5">
+          <p className="text-sm text-ink">
+            <strong>Opens and clicks aren&rsquo;t being tracked.</strong>{" "}
+            {deliveredDenom} email{deliveredDenom === 1 ? " has" : "s have"} been
+            delivered, but not a single open or click has come back — including
+            mail that was certainly opened. That&rsquo;s the signature of{" "}
+            <em>open&nbsp;/&nbsp;click tracking being turned off</em> for the
+            sending domain in Resend, which is the default. With it off, Resend
+            never adds the tracking pixel or rewrites links, so{" "}
+            <code className="font-mono text-phosphor-ink">email.opened</code> and{" "}
+            <code className="font-mono text-phosphor-ink">email.clicked</code>{" "}
+            never fire — the webhook is working fine (that&rsquo;s how deliveries
+            got here), there&rsquo;s just nothing for it to report.
+          </p>
+          <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-ink-soft">
+            <li>
+              Resend dashboard &rarr; <strong>Domains</strong> &rarr; your
+              sending domain &rarr; turn on <strong>Open Tracking</strong> and{" "}
+              <strong>Click Tracking</strong>.
+            </li>
+            <li>
+              Under <strong>Webhooks</strong>, confirm your endpoint is
+              subscribed to <em>opened</em> and <em>clicked</em> (not just
+              delivered).
+            </li>
+            <li>
+              Only mail sent <em>after</em> you enable tracking reports opens —
+              send a fresh test and it&rsquo;ll show up here.
+            </li>
+          </ol>
+        </Card>
+      )}
+
       <section className="mt-6 grid gap-3 md:grid-cols-5">
         <Tile
           icon={Mail}
@@ -307,29 +387,37 @@ export default async function AdminEmailMetricsPage() {
           Last 14 days
         </h2>
         <p className="mt-1 text-xs text-ink-faint">
-          Sent vs opened. Tall sent bars with short opens = subject lines
-          need work.
+          Messages sent vs. messages opened, both counted once each — the
+          same way the tiles above count. Tall sent bars with short opens =
+          subject lines need work.
         </p>
-        <div className="mt-6 flex items-end gap-2 h-32">
+        {/* The h-32 sits on the BAR ROW, not on the row of columns.
+            It used to sit on the outer flex, whose children are
+            `items-end` — so each column was auto-height, the inner
+            `h-full` resolved to `auto`, and every bar's `height: N%`
+            resolved against an auto-height parent. Percentages against
+            `auto` compute to `auto`, and an empty div's auto height is
+            zero: the chart rendered fourteen invisible columns under a
+            legend, on every deploy since it shipped. Height has to be
+            declared on the element the percentages are measured against. */}
+        <div className="mt-6 flex items-end gap-2">
           {days.map((d) => (
             <div
               key={d.key}
               className="flex min-w-0 flex-1 flex-col items-stretch gap-1"
             >
-              <div className="flex h-full items-end gap-[2px]">
-                <div
+              <div className="flex h-32 items-end gap-[2px]">
+                <Bar
                   title={`${d.key} · ${d.sent} sent`}
-                  className="flex-1 rounded-t bg-phosphor/50"
-                  style={{
-                    height: `${Math.max(2, Math.round((d.sent / maxDay) * 100))}%`,
-                  }}
+                  value={d.sent}
+                  max={maxDay}
+                  className="bg-phosphor/50"
                 />
-                <div
+                <Bar
                   title={`${d.key} · ${d.opened} opened`}
-                  className="flex-1 rounded-t bg-emerald-400/70"
-                  style={{
-                    height: `${Math.max(1, Math.round((d.opened / maxDay) * 100))}%`,
-                  }}
+                  value={d.opened}
+                  max={maxDay}
+                  className="bg-emerald-400/70"
                 />
               </div>
               <div className="text-[9px] tabular-nums text-ink-faint text-center">
@@ -404,6 +492,40 @@ export default async function AdminEmailMetricsPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+/**
+ * One bar of the daily chart.
+ *
+ * The floor is applied only to NON-ZERO values. The old inline version floored
+ * every bar at 2% / 1%, so a day with nothing sent still drew a sliver — which
+ * on a quiet week reads as "a trickle went out" rather than "nothing did", and
+ * is exactly the wrong thing for a page whose job is to tell you when sending
+ * has stopped. Zero renders as zero, and the day's column is empty.
+ *
+ * `aria-hidden` plus a text label: the bars carry no information a screen
+ * reader can use, and the numbers are in the title/legend.
+ */
+function Bar({
+  title,
+  value,
+  max,
+  className,
+}: {
+  title: string;
+  value: number;
+  max: number;
+  className: string;
+}) {
+  const pct = value > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0;
+  return (
+    <div
+      title={title}
+      aria-hidden
+      className={`flex-1 rounded-t ${className}`}
+      style={{ height: `${pct}%` }}
+    />
   );
 }
 
