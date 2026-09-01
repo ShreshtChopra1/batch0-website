@@ -391,7 +391,7 @@ const NON_ADMIN_PERMISSIONS = new Set<string>([
   // MUST stay in this list. `canAccessAdmin` is "holds any admin-area
   // permission", and admin-area is derived by subtracting this set from the
   // catalog — so a permission omitted here silently becomes a key to /admin.
-  // calls.invite is granted to mentors and investors by migration 0058;
+  // calls.invite is granted to mentors and investors by migration 0059;
   // leaving it out would have handed both roles the entire admin panel as a
   // side effect of letting them book a call.
   "calls.invite",

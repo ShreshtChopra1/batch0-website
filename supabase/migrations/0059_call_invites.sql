@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0058 — Staff-initiated 1:1 calls.
+-- 0059 — Staff-initiated 1:1 calls.
 --
 -- The existing office-hours tables (mentor_slots / mentor_bookings, 0011) run
 -- student→mentor: a mentor posts open slots and a student claims one. This is
@@ -18,7 +18,7 @@
 -- rather than the three role slugs being hardcoded anywhere.
 --
 -- Run in Supabase SQL Editor. Idempotent / safe to re-run.
--- Assumes 0001..0057 are applied.
+-- Assumes 0001..0058 are applied.
 -- ============================================================================
 
 create table if not exists public.call_invites (

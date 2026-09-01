@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { CallInvite, CallInviteStatus } from "@/lib/live";
 
 /**
- * Reads for staff-initiated 1:1 calls (`call_invites`, migration 0058).
+ * Reads for staff-initiated 1:1 calls (`call_invites`, migration 0059).
  *
  * Service-role reads with explicit filters rather than RLS-scoped ones, so a
  * single query can join both sides' profile names — but every function here

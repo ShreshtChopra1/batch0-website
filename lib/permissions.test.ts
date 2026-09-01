@@ -33,7 +33,7 @@ test("the non-admin capabilities do not grant admin-area access", () => {
 });
 
 test("calls.invite does not open the admin area", () => {
-  // Called out on its own because migration 0058 grants it to the mentor and
+  // Called out on its own because migration 0059 grants it to the mentor and
   // investor roles. If it ever lands in ADMIN_AREA_PERMISSIONS, both roles
   // gain the entire admin panel the moment that migration runs.
   const mentor = capabilitiesFrom("mentor", ["mentor.panel", "calls.invite"]);

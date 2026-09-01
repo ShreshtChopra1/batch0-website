@@ -8,9 +8,9 @@ Built and merged into the branch. **Three migrations still need running by hand*
 before any of it works — this repo applies migrations through the Supabase SQL
 Editor (see SETUP.md), so nothing has touched the database yet:
 
-1. `supabase/migrations/0057_hosted_events.sql`
-2. `supabase/migrations/0058_call_invites.sql`
-3. `supabase/migrations/0059_webinar_questions.sql`
+1. `supabase/migrations/0058_hosted_events.sql`
+2. `supabase/migrations/0059_call_invites.sql`
+3. `supabase/migrations/0060_webinar_questions.sql`
 
 Run them in that order. All three are idempotent and safe to re-run. Until they
 are applied, `/admin/events` will fail to save a hosted event, `/dashboard/calls`
@@ -192,7 +192,7 @@ open doors.
 
 ### 4b. Webinars
 
-**Migration** (`0057_hosted_events.sql`):
+**Migration** (`0058_hosted_events.sql`):
 
 ```sql
 alter table public.events
@@ -286,7 +286,7 @@ not send it — so a hidden webinar audience cannot ask a question through Daily
 without being un-hidden, which would defeat layer 3. Rather than trade the
 privacy guarantee for a chat box, questions now go through our own store:
 
-- A new table, `public.webinar_questions` (migration `0059`), holds one row per
+- A new table, `public.webinar_questions` (migration `0060`), holds one row per
   question with the asker's id and the event id.
 - Server actions in `app/dashboard/events/[id]/live/actions.ts` post and fetch
   questions.
@@ -301,7 +301,7 @@ The privacy property from layers 1–3 is preserved end to end. A viewer's
 `fetchQuestions` returns only their *own* questions; the host (`events.manage`)
 sees all of them. That is the same asymmetry as the roster — a student learns
 nothing about who else is in the room, including who else is asking. RLS in
-`0059` backstops the server actions so the split is enforced at the database, not
+`0060` backstops the server actions so the split is enforced at the database, not
 only in the action code.
 
 ### 4d. 1:1 calls
@@ -318,7 +318,7 @@ DB-driven (migration 0048), any custom role can be given it too — which is the
 right answer to "mentors, investors, and admin" rather than hardcoding three
 role slugs.
 
-**Migration** (`0058_call_invites.sql`), sketch:
+**Migration** (`0059_call_invites.sql`), sketch:
 
 ```sql
 create table public.call_invites (
@@ -376,7 +376,7 @@ Each step is shippable on its own.
    link. **Webinars done.**
 3. Recording: enable `enable_recording: "cloud"` for owners; webhook →
    `events.recording_url`. The past-events "Watch recording" link already exists.
-4. Permission key + migration `0058` + invite UI + student accept/join.
+4. Permission key + migration `0059` + invite UI + student accept/join.
    **1:1 calls done.**
 5. Polish: attendance rows from Daily webhooks, reminder emails via the existing
    queue (`lib/email/queue.ts`, already cron-driven in `vercel.json`), recap

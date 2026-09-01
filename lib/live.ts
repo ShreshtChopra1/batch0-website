@@ -99,7 +99,7 @@ export type CallInvite = {
 
 /**
  * A question a viewer asked during a hosted webinar (`webinar_questions`,
- * migration 0059).
+ * migration 0060).
  *
  * Questions live in our database, not in the video room's chat. A hidden
  * viewer (`hasPresence: false`) can read Daily's Prebuilt chat but not send to
@@ -121,7 +121,7 @@ export type WebinarQuestion = {
   createdAt: string;
 };
 
-/** Longest question we accept, matched by the DB check in migration 0059. */
+/** Longest question we accept, matched by the DB check in migration 0060. */
 export const MAX_QUESTION_LENGTH = 500;
 
 /**

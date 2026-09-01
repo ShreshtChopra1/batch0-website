@@ -23,7 +23,7 @@ function toLiveEvent(e: any): LiveEvent {
     startsAt: e.starts_at,
     endsAt: e.ends_at,
     location: e.location,
-    // Rows written before migration 0057 have no live_mode; they are all
+    // Rows written before migration 0058 have no live_mode; they are all
     // external by definition, so default rather than render them broken.
     liveMode: e.live_mode === "hosted" ? "hosted" : "external",
     externalUrl: e.zoom_url,

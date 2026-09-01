@@ -150,7 +150,7 @@ export async function createRoom({
         // joins hidden (hasPresence:false) and Prebuilt only lets a hidden
         // participant *read* chat, not send — so leaving it on would show
         // students a chat they can't post to. Their questions go through our
-        // own Q&A instead (webinar_questions, 0059), which keeps them hidden.
+        // own Q&A instead (webinar_questions, 0060), which keeps them hidden.
         enable_chat: mode === "meeting",
         enable_prejoin_ui: false, // we ship our own green room (PreJoin)
         // Cloud recording is paid — a free plan 400s the whole room create if

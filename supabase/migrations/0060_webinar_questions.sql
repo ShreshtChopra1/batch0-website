@@ -1,7 +1,7 @@
 -- ============================================================================
--- 0059 — Webinar Q&A.
+-- 0060 — Webinar Q&A.
 --
--- A hosted webinar (0057) hides its audience: viewers join with Daily's
+-- A hosted webinar (0058) hides its audience: viewers join with Daily's
 -- `hasPresence: false`, so they are absent from every other client's
 -- participant list and can neither see who else is watching nor how many.
 -- That privacy is the whole point of the webinar mode — but it collides with
@@ -20,7 +20,7 @@
 -- and roughly how many.
 --
 -- Run in Supabase SQL Editor. Idempotent / safe to re-run.
--- Assumes 0001..0058 are applied.
+-- Assumes 0001..0059 are applied.
 -- ============================================================================
 
 create table if not exists public.webinar_questions (

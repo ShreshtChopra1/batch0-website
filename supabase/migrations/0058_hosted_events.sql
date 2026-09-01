@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0057 — Events that batch0 hosts itself, instead of linking out to Zoom.
+-- 0058 — Events that batch0 hosts itself, instead of linking out to Zoom.
 --
 -- Until now an event's video was a `zoom_url` an admin pasted in: students
 -- clicked it, left the site, and whether they could get in had nothing to do
@@ -21,7 +21,7 @@
 -- written, reviewed, and in use rather than introducing a second system.
 --
 -- Run in Supabase SQL Editor. Idempotent / safe to re-run.
--- Assumes 0001..0056 are applied.
+-- Assumes 0001..0057 are applied.
 -- ============================================================================
 
 alter table public.events

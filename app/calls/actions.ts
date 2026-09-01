@@ -38,7 +38,7 @@ export async function createInvite(input: {
   durationMinutes: number;
   topic: string;
 }) {
-  // The capability, not the role. Migration 0058 grants calls.invite to the
+  // The capability, not the role. Migration 0059 grants calls.invite to the
   // mentor and investor roles, but an admin can hand it to any custom role
   // from /admin/roles — so checking role slugs here would quietly ignore that.
   const actor = await assertPermission("calls.invite");

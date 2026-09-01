@@ -26,7 +26,7 @@ import {
  * inside the join window + under the spam cap); `fetchQuestions` gates on
  * visibility and shapes its result by role; `setQuestionStatus` gates on the
  * `events.manage` permission. The join-window and spam-cap guards are ALSO in
- * the RLS insert policy (0059) — the anon-key browser client could otherwise
+ * the RLS insert policy (0060) — the anon-key browser client could otherwise
  * write straight to the table and skip this action.
  *
  * The audience-privacy rule lives in the read path: `fetchQuestions` returns
@@ -140,7 +140,7 @@ export async function fetchQuestions(
  * it's sufficient: `events.manage` is a staff permission and the `events read`
  * policy (0005) lets staff see every event, so a visibility check would always
  * pass; and a question row can only exist for a hosted event in the first place
- * (the insert policy in 0059 forbids any other kind), so there is no
+ * (the insert policy in 0060 forbids any other kind), so there is no
  * non-webinar row here to wrongly touch.
  */
 export async function setQuestionStatus(

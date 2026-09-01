@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { WebinarQuestion } from "@/lib/live";
 
 /**
- * Reads for webinar Q&A (`webinar_questions`, migration 0059).
+ * Reads for webinar Q&A (`webinar_questions`, migration 0060).
  *
  * Service-role reads with explicit filters, so one query can join the asker's
  * name — but the caller decides the scope and passes it in. RLS is still the
