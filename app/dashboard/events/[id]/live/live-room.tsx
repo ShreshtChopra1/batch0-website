@@ -13,6 +13,54 @@ import { AlertTriangle } from "lucide-react";
 type Phase = "prejoin" | "joining" | "joined" | "left" | "error";
 
 /**
+ * The Daily SDK, fetched once per page load and shared.
+ *
+ * daily-js is ~264 kB. Importing it inside the click handler meant every join
+ * paid a full download-and-parse *after* the user had already committed —
+ * dead time on the one action where the room is presumed to be waiting. The
+ * green room is the natural place to spend it: someone checking their camera
+ * is busy for several seconds, and the module is warm by the time they press
+ * the button.
+ *
+ * Module-level rather than a ref, so leaving and rejoining doesn't re-import,
+ * and so the promise is shared if anything else on the page wants it.
+ */
+let dailyModule: Promise<typeof DailyIframe> | null = null;
+function loadDaily(): Promise<typeof DailyIframe> {
+  // daily-js touches browser globals as it loads, which is why this is never
+  // a static import — a top-level one would execute during SSR.
+  dailyModule ??= import("@daily-co/daily-js").then((m) => m.default);
+  return dailyModule;
+}
+
+/**
+ * Warm the connection to the room's origin.
+ *
+ * Joining opens a WebSocket and pulls media from Daily's edge. Doing the DNS
+ * lookup and TLS handshake now, while the user is still looking at their own
+ * face, takes that setup off the join path. React 18 has no `preconnect`
+ * primitive, so this is injected by hand; it is idempotent per origin.
+ */
+function preconnect(url: string) {
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return;
+  }
+  if (document.head.querySelector(`link[rel="preconnect"][href="${origin}"]`)) {
+    return;
+  }
+  for (const rel of ["preconnect", "dns-prefetch"]) {
+    const link = document.createElement("link");
+    link.rel = rel;
+    link.href = origin;
+    if (rel === "preconnect") link.crossOrigin = "anonymous";
+    document.head.appendChild(link);
+  }
+}
+
+/**
  * A live room, on batch0.org.
  *
  * Two halves. Ours is the green room (device check before anyone is watching)
@@ -61,18 +109,26 @@ export function LiveRoom({
 
   useEffect(() => destroy, [destroy]);
 
+  // Spend the green room usefully: pull the SDK down and open a connection to
+  // the room's origin while the user is still checking their camera, so the
+  // Join click has nothing left to wait for. Both are best-effort — a failure
+  // here costs the optimisation, not the join, which imports again and gets
+  // the same (already settled or in-flight) promise.
+  useEffect(() => {
+    void loadDaily().catch(() => {});
+    preconnect(roomUrl);
+  }, [roomUrl]);
+
   const join = useCallback(
     async ({ cameraOn, micOn }: { cameraOn: boolean; micOn: boolean }) => {
       if (!containerRef.current || callRef.current) return;
       setPhase("joining");
       setError(null);
       try {
-        // Imported here rather than at module scope: daily-js reaches for
-        // browser globals as it loads, so a static import would run during
-        // SSR and break the page before it ever reached a browser.
-        const { default: Daily } = (await import("@daily-co/daily-js")) as {
-          default: typeof DailyIframe;
-        };
+        // Almost always already resolved — the green room started this on
+        // mount. On a fast click it falls back to awaiting the same in-flight
+        // promise rather than starting a second download.
+        const Daily = await loadDaily();
 
         const call = Daily.createFrame(containerRef.current, {
           url: roomUrl,
@@ -165,11 +221,22 @@ export function LiveRoom({
         click handler fires.
       */}
       <div className={phase === "prejoin" ? "hidden" : "block"}>
-        <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="truncate font-display text-lg font-semibold tracking-[-0.02em] text-ink">
-            {title}
-          </h1>
-          {phase === "joined" && <LiveDot />}
+        <header className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <h1 className="truncate font-display text-lg font-semibold tracking-[-0.02em] text-ink">
+              {title}
+            </h1>
+            {phase === "joined" && <LiveDot />}
+          </div>
+          <span
+            className={`shrink-0 rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
+              role === "host"
+                ? "border-phosphor/50 bg-phosphor/10 text-phosphor-ink"
+                : "border-line text-ink-faint"
+            }`}
+          >
+            {role === "host" ? "Hosting" : "Watching"}
+          </span>
         </header>
         {/*
           Webinar: video and the Q&A panel side by side on desktop, stacked on
@@ -177,12 +244,30 @@ export function LiveRoom({
           element in both — only what sits next to it changes.
         */}
         <div className="flex flex-col gap-3 lg:flex-row">
-          <div
-            ref={containerRef}
-            className="h-[60vh] min-h-[360px] w-full flex-1 overflow-hidden rounded-xl border border-line bg-ink-900 lg:h-[70vh]"
-          />
+          {/*
+            The video container is wrapped rather than positioned directly,
+            because Daily replaces this element's contents with its own iframe —
+            anything rendered as a sibling *inside* it would be blown away on
+            join. The overlay sits on the wrapper instead.
+          */}
+          <div className="relative min-w-0 flex-1">
+            <div
+              ref={containerRef}
+              className="h-[60vh] min-h-[360px] w-full overflow-hidden rounded-xl border border-line bg-ink-900 lg:h-[70vh]"
+            />
+            {phase === "joining" && (
+              <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-ink-900/80">
+                <div className="flex flex-col items-center gap-3">
+                  <span className="h-7 w-7 animate-spin rounded-full border-2 border-line border-t-phosphor" />
+                  <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-faint">
+                    Connecting
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
           {qa && phase !== "prejoin" && (
-            <div className="h-[60vh] min-h-[360px] w-full shrink-0 lg:h-[70vh] lg:w-80">
+            <div className="h-[50vh] min-h-[320px] w-full shrink-0 lg:h-[70vh] lg:w-80">
               <QAPanel
                 eventId={qa.eventId}
                 role={role}
@@ -191,9 +276,6 @@ export function LiveRoom({
             </div>
           )}
         </div>
-        {phase === "joining" && (
-          <p className="mt-3 text-center text-xs text-ink-faint">Connecting…</p>
-        )}
       </div>
 
       {phase === "prejoin" && (
@@ -202,7 +284,13 @@ export function LiveRoom({
           subtitle={
             role === "host"
               ? "You're the host — your camera and mic will be live."
-              : "You'll be able to watch and use the chat."
+              : qa
+                ? // Not "use the chat": in a webinar, Daily's chat is off for
+                  // viewers (a hidden participant can read it but not send),
+                  // which is exactly why the Q&A panel exists. Promising chat
+                  // sends them looking for a control that isn't there.
+                  "Your camera and mic stay off, and nobody can see who else is here. You can ask questions beside the video."
+                : "You'll be able to watch and listen."
           }
           role={role}
           onJoin={join}

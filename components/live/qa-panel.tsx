@@ -45,23 +45,74 @@ export function QAPanel({
     initialQuestions,
   );
 
-  // Poll for the live view. The host wants new questions as they arrive; a
-  // viewer wants to see their own question's status change when the host
-  // answers it. Five seconds is responsive enough for a talk and cheap enough
-  // to leave running for the length of one.
+  // Guards against pile-up: on a slow connection a 5s interval can fire again
+  // before the previous request has answered, and each one is a server action
+  // hitting the database.
+  const inFlight = useRef(false);
+
   const refresh = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
       const next = await fetchQuestions(eventId);
       setQuestions(next);
     } catch {
       // A dropped poll is not worth surfacing — the next one will catch up.
+    } finally {
+      inFlight.current = false;
     }
   }, [eventId]);
 
+  /**
+   * Polling, priced for a room rather than for one person.
+   *
+   * The naive version — a flat 5s interval that runs whenever the component is
+   * mounted — is a per-viewer cost multiplied by the size of the audience, and
+   * a webinar is the one place that multiplier is large. Fifty students at 5s
+   * is 600 requests a minute against the database for a table that changes a
+   * few times an hour. Two things fix most of it:
+   *
+   *   Visibility. Students tab away during a talk constantly. A hidden tab
+   *   learns nothing from polling, so it stops, and refreshes once on return
+   *   so nothing is stale when they look back.
+   *
+   *   Role. The host is watching a queue that others are filling and wants it
+   *   promptly. A viewer is watching their own handful of questions change
+   *   status occasionally — three times slower is imperceptible to them and
+   *   removes most of the traffic, because viewers are nearly all of the room.
+   */
   useEffect(() => {
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
-  }, [refresh]);
+    const period = isHost ? 5000 : 15000;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const stop = () => {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    const start = () => {
+      if (timer === null) timer = setInterval(refresh, period);
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        // Catch up immediately rather than making them wait out a full period
+        // for whatever changed while the tab was in the background.
+        void refresh();
+        start();
+      }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refresh, isHost]);
 
   return (
     <aside className="flex h-full flex-col rounded-xl border border-line bg-wash">
