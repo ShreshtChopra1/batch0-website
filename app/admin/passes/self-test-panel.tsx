@@ -81,7 +81,7 @@ export function SelfTestPanel({
   const [error, setError] = useState<string | undefined>();
   const [notice, setNotice] = useState<string | undefined>();
 
-  const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars));
+  const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars), "virtual");
 
   async function run<T>(
     kind: "check" | "preview" | "send" | "clean",

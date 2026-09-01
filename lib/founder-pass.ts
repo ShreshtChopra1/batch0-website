@@ -9,8 +9,10 @@ import {
   grantOf,
   grantDiscountCents,
   normalizeDiscountCents,
+  passKind,
   passTier,
   type PassGrant,
+  type PassKind,
   type PassTier,
 } from "@/lib/founder-pass-tiers";
 
@@ -63,6 +65,13 @@ export type FounderPass = {
    * never evaporate because of a deploy ordering.
    */
   grant: PassGrant;
+  /**
+   * How the pass was delivered (migration 0054). Reads as "card" on a database
+   * where 0054 hasn't run, which is exactly right: everything that predates it
+   * was printed. Mirrors `grant.kind` — same value, surfaced here so callers
+   * holding a FounderPass don't have to reach through the grant to ask.
+   */
+  kind: PassKind;
 };
 
 /**
@@ -85,6 +94,7 @@ export type PassRow = {
   tier?: string | null;
   recipient_name?: string | null;
   discount_cents?: number | null;
+  kind?: string | null;
 };
 
 /** Map the profile columns off a founder_passes row, tolerating their absence. */
@@ -279,6 +289,7 @@ export async function getPassForUser(
     redeemedCode: row.redeemed_code ?? null,
     profile: mapPassProfile(row),
     grant: mapPassGrant(row),
+    kind: passKind(row.kind),
   };
 }
 
@@ -289,8 +300,16 @@ export async function getPassForUser(
 export function mapPassGrant(row: {
   tier?: string | null;
   discount_cents?: number | null;
+  kind?: string | null;
 }): PassGrant {
-  return grantOf(passTier(row.tier), normalizeDiscountCents(row.discount_cents));
+  return grantOf(
+    passTier(row.tier),
+    normalizeDiscountCents(row.discount_cents),
+    // Absent column (0054 not applied) resolves to "card" — the conservative
+    // read, since a card carries no auto-admit. A deploy ordering can under-
+    // grant for a few minutes; it can never admit someone by accident.
+    passKind(row.kind),
+  );
 }
 
 /**
@@ -336,6 +355,14 @@ export async function passDiscountCentsForUser(
 }
 
 export { mapPassProfile };
+
+// Whether a pass admits its holder outright is deliberately NOT a helper here.
+// The rule needs two facts this module can't see on its own — that the pass is
+// virtual (grantAutoAdmits, lib/founder-pass-tiers.ts) and that no reviewer has
+// declined the holder since they redeemed it (reviewerOverrodePass,
+// lib/admissions.ts) — and a half-answer named autoAdmitsForUser() is exactly
+// the kind of thing a future caller would use on its own and hand out a seat
+// over a reviewer's objection. lib/admissions.ts owns the whole question.
 
 export async function hasFounderPass(
   client: SupabaseClient,

@@ -37,6 +37,7 @@ import {
   grantOf,
   grantPerkLines,
   parseDollarsToCents,
+  passKind,
   passTier,
   type PassTierKey,
 } from "@/lib/founder-pass-tiers";
@@ -262,7 +263,7 @@ export function PassesPanel({
    * whether or not the pass is ever claimed.
    */
   async function send() {
-    const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars));
+    const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars), "virtual");
     const total = recipientCount * sendCount;
     const heavy =
       total >= 5 ||
@@ -339,7 +340,7 @@ export function PassesPanel({
       row.tier === DEFAULT_TIER.key
         ? ""
         : `\n\nThis is a ${passTier(row.tier).label.toLowerCase()} pass: ${grantPerkLines(
-            grantOf(passTier(row.tier)),
+            grantOf(passTier(row.tier), null, passKind(row.kind)),
           )
             .join(" ")
             .toLowerCase()}`;
@@ -378,7 +379,7 @@ export function PassesPanel({
   const totalPasses = recipientCount * sendCount;
   const sendReady = recipientCount > 0;
 
-  const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars));
+  const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars), "virtual");
   // A typed value that parses to nothing is a typo, not "use the tier" — the
   // server would silently fall back, so say so before they click.
   const discountUnparsed =

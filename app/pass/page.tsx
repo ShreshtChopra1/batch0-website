@@ -62,6 +62,14 @@ type Perk = {
 // Deliberately absent: build clinics and guest invitations. Those are real
 // intentions but pure scheduling/ops with nothing to back them yet — so they
 // don't appear here until they do.
+//
+// Also deliberately absent: AUTO-ADMIT. It is real and it is enforced
+// (lib/admissions.ts), but only for a VIRTUAL pass — one issued by name to a
+// person an admin already decided on. This list is what a stranger holding a
+// printed card is promised, and a card that admitted whoever picked it up
+// would be an admissions hole, not a perk. Virtual holders see the line via
+// grantPerkLines() in the block under their ticket, which reads the pass's
+// actual kind.
 const PERKS: Perk[] = [
   {
     key: "discount",

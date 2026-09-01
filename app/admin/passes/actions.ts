@@ -353,7 +353,11 @@ export async function issueVirtualPassesAction(input: {
   // under-grant, and can never write a key the 0055 check constraint rejects.
   const tier = passTier(input.tier);
   const discountCents = parseDollarsToCents(input.discountDollars ?? "");
-  const grant = grantOf(tier, discountCents);
+  // "virtual" is not a guess — this action only ever issues virtual passes
+  // (the insert below hard-codes kind: "virtual"). Passing it here is what puts
+  // the auto-admit line in the invite email, so the promise the recipient reads
+  // is the one lib/admissions.ts will keep.
+  const grant = grantOf(tier, discountCents, "virtual");
 
   let pepper: string;
   try {

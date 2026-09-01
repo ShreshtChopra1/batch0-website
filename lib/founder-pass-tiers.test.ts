@@ -13,6 +13,9 @@ import {
   normalizeDiscountCents,
   parseDollarsToCents,
   formatCents,
+  passKind,
+  grantAutoAdmits,
+  AUTO_ADMIT_LINE,
 } from "./founder-pass-tiers.ts";
 
 // What a founder pass is worth is the one number in this app that is decided
@@ -199,6 +202,71 @@ test("an override's perk line quotes the override, not the tier", () => {
   const lines = grantPerkLines(grantOf(passTier("full_ride"), 4500));
   assert.match(lines[0], /\$45 off tuition/);
   assert.ok(!/waived in full/.test(lines[0]));
+});
+
+// ---------------------------------------------------------------------------
+// Auto-admit — a property of HOW the pass was issued, not of its tier
+// ---------------------------------------------------------------------------
+
+test("passKind defaults to card for anything it doesn't recognise", () => {
+  // The conservative floor, and load-bearing: a row from before migration 0054
+  // has no kind at all, and reading it as "virtual" would hand out a seat.
+  assert.equal(passKind("virtual"), "virtual");
+  assert.equal(passKind("card"), "card");
+  assert.equal(passKind(null), "card");
+  assert.equal(passKind(undefined), "card");
+  assert.equal(passKind(""), "card");
+  assert.equal(passKind("VIRTUAL"), "card");
+  assert.equal(passKind("some_future_kind"), "card");
+});
+
+test("a grant defaults to a printed card, which never auto-admits", () => {
+  assert.equal(grantOf(DEFAULT_TIER).kind, "card");
+  assert.equal(grantAutoAdmits(grantOf(DEFAULT_TIER)), false);
+});
+
+test("every virtual pass auto-admits, at every tier", () => {
+  // "As a general thing" — the perk belongs to the delivery channel, so a
+  // standard virtual pass carries it exactly as a full ride does. A new tier
+  // added to the roster inherits it without anyone remembering to.
+  for (const tier of PASS_TIERS) {
+    assert.equal(grantAutoAdmits(grantOf(tier, null, "virtual")), true, tier.key);
+    assert.equal(grantAutoAdmits(grantOf(tier, null, "card")), false, tier.key);
+  }
+});
+
+test("an auto-admitting pass advertises the seat instead of a decision clock", () => {
+  // Two promises about the same moment. Printing "you're in on submit" next to
+  // "we aim to decide within 2 business days" reads as a contradiction, or as
+  // a wait that isn't real.
+  for (const tier of PASS_TIERS) {
+    const lines = grantPerkLines(grantOf(tier, null, "virtual"));
+    assert.ok(lines.includes(AUTO_ADMIT_LINE), `${tier.key} lost the auto-admit line`);
+    assert.ok(
+      !lines.some((l) => /business day/.test(l)),
+      `${tier.key} promises a decision target it will never use`,
+    );
+  }
+});
+
+test("a printed card keeps its decision clock and never mentions auto-admit", () => {
+  for (const tier of PASS_TIERS) {
+    const lines = grantPerkLines(grantOf(tier, null, "card"));
+    assert.ok(!lines.includes(AUTO_ADMIT_LINE), `${tier.key} advertises a seat it can't give`);
+    assert.ok(
+      lines.some((l) => /business day/.test(l)),
+      `${tier.key} lost its decision target`,
+    );
+  }
+});
+
+test("auto-admit doesn't disturb the discount or the credits lines", () => {
+  const card = grantPerkLines(grantOf(passTier("full_ride"), null, "card"));
+  const virtual = grantPerkLines(grantOf(passTier("full_ride"), null, "virtual"));
+  assert.equal(card.length, virtual.length);
+  assert.equal(card[0], virtual[0]); // discount
+  assert.equal(card[2], virtual[2]); // feedback credits
+  assert.notEqual(card[1], virtual[1]); // clock vs. seat
 });
 
 test("formatCents shows cents only when there are cents", () => {

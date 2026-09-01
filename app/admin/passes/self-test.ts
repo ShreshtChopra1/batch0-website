@@ -194,7 +194,7 @@ export async function runVirtualPassSelfCheckAction(input: {
   const steps: CheckStep[] = [];
   const tier = passTier(input.tier);
   const discountCents = parseDollarsToCents(input.discountDollars ?? "");
-  const grant = grantOf(tier, discountCents);
+  const grant = grantOf(tier, discountCents, "virtual");
 
   // Clear anything a previous crashed run left behind, before this one adds to
   // it. Reported rather than swallowed: strays are how you find out a run died
@@ -657,7 +657,7 @@ export async function previewInviteEmailAction(input: {
 
   const tier = passTier(input.tier);
   const discountCents = parseDollarsToCents(input.discountDollars ?? "");
-  const grant = grantOf(tier, discountCents);
+  const grant = grantOf(tier, discountCents, "virtual");
   const code = normalizePassCode(mintPassCode());
 
   const t = Templates.founderPassInvite({

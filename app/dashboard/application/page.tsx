@@ -190,6 +190,20 @@ export default async function ApplicationPage({
             Thanks for applying. We can't offer you a seat in this cohort.
           </p>
           <DecisionFeedback app={app} />
+          {/* A decline shuts THIS cohort, not batch0 — and the page that says
+              so had no way out of it. The rules themselves live in
+              lib/reapply.ts and are enforced on /apply, which is why this is a
+              plain link: it can tell them what's true in general without a
+              second round trip, and /apply says exactly which cohorts are open
+              to them (or that none is yet). */}
+          <p className="mt-4 text-sm text-ink-soft">
+            {holdsPass
+              ? "Your Founder Pass keeps the door open — you can apply again to the next cohort, including this one."
+              : "This isn't the end of the road. You can apply again to a cohort you haven't been decided on."}
+          </p>
+          <ButtonLink href="/apply" className="mt-4" variant="secondary" size="sm">
+            {holdsPass ? "Apply again" : "Apply to another cohort"}
+          </ButtonLink>
           {holdsPass && <RebuildForm existing={rebuild} />}
         </Card>
       )}
