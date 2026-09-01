@@ -79,6 +79,10 @@ export default async function StudentAppCourse() {
       .from("enrollments")
       .select("cohort_id, cohort:cohorts(name, starts_on)")
       .eq("user_id", profile.id)
+      // See the note on the same query in home/page.tsx: one row per cohort,
+      // so a returning student needs the newest rather than "the" enrollment.
+      .order("enrolled_at", { ascending: false })
+      .limit(1)
       .maybeSingle(),
     admin
       .from("lesson_progress")

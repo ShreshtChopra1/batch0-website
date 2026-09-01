@@ -210,18 +210,24 @@ async function loadTeam(userId: string): Promise<{
   const admin = createAdminClient();
   const { data: membership } = await admin
     .from("team_members")
-    .select("team_id, team:teams(name, tagline)")
+    .select("team_id, team:teams(name, tagline, team_members(count))")
     .eq("user_id", userId)
     .limit(1)
     .maybeSingle();
   if (!membership?.team_id) return null;
   const team = (
     Array.isArray(membership.team) ? membership.team[0] : membership.team
-  ) as { name: string; tagline: string | null } | null;
+  ) as {
+    name: string;
+    tagline: string | null;
+    team_members?: { count: number }[];
+  } | null;
   if (!team) return null;
-  const { count } = await admin
-    .from("team_members")
-    .select("id", { count: "exact", head: true })
-    .eq("team_id", membership.team_id);
-  return { name: team.name, tagline: team.tagline, memberCount: count ?? 0 };
+  return {
+    name: team.name,
+    tagline: team.tagline,
+    // The count rides along on the embed above rather than costing a second
+    // round trip. PostgREST returns an aggregate embed as [{ count: n }].
+    memberCount: team.team_members?.[0]?.count ?? 0,
+  };
 }

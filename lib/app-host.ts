@@ -51,7 +51,14 @@ const MARKETING_PREFIXES = [
   "/program",
   "/blog",
   "/sponsors",
-  "/challenges",
+  // "/challenges" is deliberately NOT here. It looks like marketing and it is
+  // not: an enrolled student's open challenge is surfaced on the app's Home
+  // screen as a live deadline, and the entry form needs their session. Bouncing
+  // it to the apex threw them out of the installed app into a host where their
+  // cookie does not exist — sessions here are per-host — so the one thing the
+  // screen said was due became a signed-out page. Search engines are handled
+  // instead by metadataBase (app/layout.tsx), which canonicalises every
+  // /challenges URL to batch0.org whichever host served it.
   "/privacy",
   "/terms",
   "/refund-policy",

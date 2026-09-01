@@ -75,6 +75,12 @@ export default async function StudentAppHome() {
       .from("enrollments")
       .select("id, cohort_id, cohort:cohorts(name, starts_on, ends_on)")
       .eq("user_id", userId)
+      // enrollments is unique per (user_id, cohort_id), NOT per user — a
+      // returning student has a row per cohort and a bare .maybeSingle()
+      // throws PGRST116, which here silently cost them the week number and
+      // the weekly lesson count. Newest enrollment wins.
+      .order("enrolled_at", { ascending: false })
+      .limit(1)
       .maybeSingle(),
     // Fees AND fines. The desktop home shows only fees; a fine is the harder
     // stop of the two (middleware locks the whole product behind it), so a

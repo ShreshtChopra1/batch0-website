@@ -74,7 +74,15 @@ export default async function AdminAppToday() {
           .eq("status", "accepted")
       : { count: null },
     seePeople
-      ? admin.from("enrollments").select("id", { count: "exact", head: true })
+      ? admin
+          // !inner + the status filter is load-bearing: a plain count of
+          // `enrollments` counts every seat ever sold, across every past
+          // cohort. Dividing this week's check-ins by that made the rate fall
+          // forever and read as a program collapsing rather than a stable one.
+          // Scoped to cohorts actually running, it means what it says.
+          .from("enrollments")
+          .select("id, cohort:cohorts!inner(status)", { count: "exact", head: true })
+          .eq("cohort.status", "active")
       : { count: null },
     seePeople
       ? admin
@@ -169,7 +177,11 @@ export default async function AdminAppToday() {
                   label="Enrolled"
                   value={enrolled ?? 0}
                   href="/app/admin/people"
-                  hint="Open the directory"
+                  // Says what the number now actually counts. It is scoped to
+                  // running cohorts (see the query), and a tile labelled just
+                  // "Enrolled" next to a smaller figure than last week would
+                  // read as churn rather than as a narrower question.
+                  hint="In active cohorts"
                 />
               )}
               {checkinRate && (

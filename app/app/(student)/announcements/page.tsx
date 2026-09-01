@@ -77,7 +77,7 @@ export default async function StudentAppAnnouncements() {
                 <h2 className="text-[15px] font-medium leading-snug text-ink">
                   {a.title as string}
                 </h2>
-                <p className="mt-2 whitespace-pre-wrap text-[14px] leading-relaxed text-ink-soft">
+                <p className="mt-2 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-ink-soft [overflow-wrap:anywhere]">
                   {a.body as string}
                 </p>
                 <p className="mt-3 font-mono text-[11px] tabular-nums text-ink-faint">
