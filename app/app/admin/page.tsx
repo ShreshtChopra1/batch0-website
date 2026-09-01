@@ -45,6 +45,8 @@ export default async function AdminAppToday() {
   const seePeople = can(caps, "people.view");
   const seeRevenue = can(caps, "payments.view");
   const seeAtRisk = can(caps, "interventions.manage");
+  // Only decides where the "Checked in" tile points — it gates no data here.
+  const seePulse = can(caps, "pulse.view");
 
   const admin = createAdminClient();
   const weekStart = isoWeekStart();
@@ -152,15 +154,30 @@ export default async function AdminAppToday() {
 
         {(seePeople || seeRevenue || seeAtRisk) && (
           <Section title="The program">
+            {/* Every tile is a link. A number on a touch screen reads as
+                tappable whether or not it is, so a tile that does nothing is
+                indistinguishable from one that is broken — and each of these
+                already implies exactly one destination. The href is always a
+                page the tile's own permission can open: `Enrolled` needs
+                people.view and goes to the in-app directory; `Checked in`
+                prefers Pulse (the check-in analytics) but falls back to the
+                directory for a role without pulse.view; `Revenue` needs
+                payments.view and goes to the payments ledger it is summing. */}
             <div className="grid grid-cols-2 gap-2.5">
               {seePeople && (
-                <Stat label="Enrolled" value={enrolled ?? 0} />
+                <Stat
+                  label="Enrolled"
+                  value={enrolled ?? 0}
+                  href="/app/admin/people"
+                  hint="Open the directory"
+                />
               )}
               {checkinRate && (
                 <Stat
                   label="Checked in"
                   value={checkinRate}
                   hint="This week"
+                  href={seePulse ? "/admin/pulse" : "/app/admin/people"}
                   tone={
                     (checkedIn ?? 0) < (enrolled ?? 0) / 2 ? "warn" : "default"
                   }
@@ -176,7 +193,12 @@ export default async function AdminAppToday() {
                 />
               )}
               {seeRevenue && (
-                <Stat label="Revenue" value={money(revenueCents)} />
+                <Stat
+                  label="Revenue"
+                  value={money(revenueCents)}
+                  href="/admin/payments"
+                  hint="Every payment"
+                />
               )}
             </div>
           </Section>

@@ -1,7 +1,7 @@
 import { Video, MapPin } from "lucide-react";
 import { requireViewer } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getCohortEvents } from "@/lib/app-cache";
 import { LocalTime } from "@/components/ui/local-time";
 import { AppHeader, AppBody, Section, Empty, Row } from "@/components/app/frame";
 import type { Role } from "@/lib/types";
@@ -30,36 +30,15 @@ const TYPE_LABEL: Record<string, string> = {
 export default async function StudentAppEvents() {
   const { profile } = await requireViewer();
   const access = await getStudentAccess(profile.role as Role);
-  const admin = createAdminClient();
   const nowIso = new Date().toISOString();
 
-  // Cohort-scoped events plus the global ones, matching what /dashboard/events
-  // shows. A PostgREST builder is single-use, so each query builds its own
-  // rather than sharing one and having the second inherit the first's filters.
-  const scoped = () => {
-    const q = admin
-      .from("events")
-      .select(
-        "id, title, type, description, starts_at, location, zoom_url, recording_url",
-      )
-      .in("visibility", ["enrolled", "public"]);
-    return access.cohortId
-      ? q.or(`cohort_id.is.null,cohort_id.eq.${access.cohortId}`)
-      : q.is("cohort_id", null);
-  };
-
-  const [{ data: upcoming }, { data: past }] = await Promise.all([
-    scoped()
-      .gte("starts_at", nowIso)
-      .order("starts_at", { ascending: true })
-      .limit(20),
-    // Only the recent past, and only enough of it to find last week's
-    // recording — the archive is not a phone surface.
-    scoped()
-      .lt("starts_at", nowIso)
-      .order("starts_at", { ascending: false })
-      .limit(5),
-  ]);
+  // Cached (lib/app-cache.ts): the calendar is staff-authored and changes a few
+  // times a cohort, so it is shared across everyone in that cohort for a minute
+  // — and the prefetcher has usually warmed it before this screen is opened.
+  const { upcoming, past } = await getCohortEvents(
+    { cohortId: access.cohortId },
+    nowIso,
+  );
 
   return (
     <>

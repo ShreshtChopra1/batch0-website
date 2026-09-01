@@ -3,6 +3,7 @@ import { requireViewer, roleHome } from "@/lib/auth";
 import { can, canAccessAdmin } from "@/lib/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AppShell } from "@/components/app/frame";
+import { AppPrefetch } from "@/components/app/prefetch";
 import type { Tab } from "@/components/app/tab-bar";
 
 /**
@@ -62,5 +63,12 @@ export default async function AdminAppLayout({
     { href: "/app/admin/more", label: "More", icon: "MoreHorizontal" },
   ].filter(Boolean) as Tab[];
 
-  return <AppShell tabs={tabs}>{children}</AppShell>;
+  return (
+    <AppShell tabs={tabs}>
+      {children}
+      {/* Only the tabs this role can actually open — prefetching a route the
+          layout would bounce is a wasted render and a wasted request. */}
+      <AppPrefetch routes={tabs.map((t) => t.href)} />
+    </AppShell>
+  );
 }

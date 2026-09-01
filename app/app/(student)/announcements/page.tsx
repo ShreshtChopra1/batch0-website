@@ -1,6 +1,6 @@
 import { requireViewer } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getCohortAnnouncements } from "@/lib/app-cache";
 import { LocalTime } from "@/components/ui/local-time";
 import { AppHeader, AppBody, Empty } from "@/components/app/frame";
 import type { Role } from "@/lib/types";
@@ -23,20 +23,19 @@ export const dynamic = "force-dynamic";
 export default async function StudentAppAnnouncements() {
   const { profile } = await requireViewer();
   const access = await getStudentAccess(profile.role as Role);
-  const admin = createAdminClient();
-
   // Mirrors the RLS policy on `announcements`: cohort-scoped posts plus the
   // global ones. A student with no cohort sees only the global posts rather
-  // than an error.
-  let query = admin
-    .from("announcements")
-    .select("id, title, body, created_at")
-    .order("created_at", { ascending: false })
-    .limit(30);
-  query = access.cohortId
-    ? query.or(`cohort_id.is.null,cohort_id.eq.${access.cohortId}`)
-    : query.is("cohort_id", null);
-  const { data: announcements } = await query;
+  // than an error. Cached per cohort (lib/app-cache.ts) — staff-authored
+  // content that a whole cohort reads, so it is shared rather than re-queried
+  // for each of them.
+  //
+  // Capped at 30. Announcements accumulate for the life of a cohort and nobody
+  // scrolls to the fortieth; an uncapped list is a payload that grows forever
+  // on the connection least able to carry it.
+  const announcements = await getCohortAnnouncements(
+    { cohortId: access.cohortId },
+    30,
+  );
 
   return (
     <>

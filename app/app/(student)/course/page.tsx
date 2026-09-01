@@ -4,6 +4,7 @@ import { requireViewer } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cohortWeek } from "@/lib/cohort-week";
+import { getSyllabus, type SyllabusModule } from "@/lib/app-cache";
 import { fmtDateOnly } from "@/lib/pre-cohort";
 import {
   AppHeader,
@@ -102,32 +103,21 @@ export default async function StudentAppCourse() {
     );
   }
 
-  // ---- Wave 2: the whole syllabus in one query ----
-  // Lessons ride along as a nested embed rather than a second `in("module_id",
-  // …)` query that could only be issued once the module ids were known. Same
-  // rows, one round trip instead of two.
-  const { data: modules } = await admin
-    .from("modules")
-    .select(
-      "id, week, title, summary, position, lessons(id, title, duration_seconds, position)",
-    )
-    .eq("cohort_id", cohortId)
-    .order("week", { ascending: true })
-    .order("position", { ascending: true })
-    .order("position", { ascending: true, referencedTable: "lessons" });
+  // ---- Wave 2: the whole syllabus, cached ----
+  // Lessons ride along as a nested embed rather than a second query keyed on
+  // the module ids, and the whole thing is cached per cohort for a minute
+  // (lib/app-cache.ts) because a syllabus is authored once and read constantly.
+  // Per-student progress is deliberately NOT part of that cache — it is fetched
+  // above, uncached, so finishing a lesson shows up immediately.
+  const modules = await getSyllabus(cohortId);
 
   const doneIds = new Set((progress ?? []).map((p) => p.lesson_id as string));
-  type LessonRow = {
-    id: string;
-    title: string;
-    duration_seconds: number | null;
-  };
-  const byModule = new Map<string, LessonRow[]>();
+  const byModule = new Map<string, SyllabusModule["lessons"]>();
   let totalLessons = 0;
   let doneLessons = 0;
-  for (const m of modules ?? []) {
-    const items = ((m.lessons ?? []) as LessonRow[]) ?? [];
-    byModule.set(m.id as string, items);
+  for (const m of modules) {
+    const items = m.lessons ?? [];
+    byModule.set(m.id, items);
     totalLessons += items.length;
     doneLessons += items.filter((l) => doneIds.has(l.id)).length;
   }
@@ -145,12 +135,12 @@ export default async function StudentAppCourse() {
         }
       />
       <AppBody>
-        {(modules ?? []).length === 0 ? (
+        {modules.length === 0 ? (
           <Empty>No modules published yet. They appear as each week opens.</Empty>
         ) : (
           <div className="space-y-2.5">
-            {(modules ?? []).map((m) => {
-              const items = byModule.get(m.id as string) ?? [];
+            {modules.map((m) => {
+              const items = byModule.get(m.id) ?? [];
               const done = items.filter((l) => doneIds.has(l.id)).length;
               const current = week !== null && m.week === week;
               // A module for a week that hasn't arrived is shown, but marked —
@@ -159,7 +149,7 @@ export default async function StudentAppCourse() {
               const ahead = week !== null && m.week > week;
               return (
                 <details
-                  key={m.id as string}
+                  key={m.id}
                   open={current}
                   className="group overflow-hidden rounded-2xl border border-line bg-wash open:bg-paper"
                 >

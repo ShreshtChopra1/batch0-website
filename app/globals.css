@@ -679,6 +679,40 @@ a,
   display: block;
   overflow-x: auto;
 }
+
+/* ── Product tables on a narrow screen ───────────────────────────────────────
+ *
+ * The admin, mentor and dashboard panels hold ~16 data tables (payments, audit,
+ * referrals, AI usage, the student record…) laid out for a desk. On a phone they
+ * are wider than the viewport, and because <body> carries `overflow-x: clip`
+ * they do not scroll — the columns past the fold are simply unreachable. That
+ * matters more now that the installed app links straight into these pages from
+ * its More screens.
+ *
+ * Same technique the blog prose above already uses, and it is a real CSS
+ * behaviour rather than a hack: `display: block` makes the <table> a block box
+ * that can scroll, while thead/tbody keep their internal table display types, so
+ * the browser generates an anonymous table box around the rows and the columns
+ * still align.
+ *
+ * Deliberately capped at 900px. Above that the panels have the room they were
+ * designed for, and `display: block` there would stop `w-full` tables from
+ * stretching their columns — a visible regression on the surface that is
+ * currently correct. Below it, a table you can scroll beats a table you cannot
+ * read.
+ *
+ * `overscroll-behavior-x: contain` stops a horizontal swipe that reaches the end
+ * of a table from chaining to the browser's back-gesture, which is a genuinely
+ * bad surprise mid-scroll on iOS. */
+@media (max-width: 900px) {
+  main table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
 .blog-prose thead th {
   text-align: left;
   font-family: "Arrow Fallback", var(--font-mono), ui-monospace, monospace;
