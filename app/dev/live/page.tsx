@@ -9,9 +9,22 @@ import { LivePreview } from "./preview";
  * on before any of that exists. Your real camera and microphone do work here,
  * because those are plain `getUserMedia` and owe nothing to a provider.
  *
- * Development only. This is not behind a permission check — it is behind not
- * existing in production at all, which is the only guarantee worth having for
- * a route that deliberately skips every guard the real pages apply.
+ * This is not behind a permission check — it is behind not existing on the
+ * live site at all, which is the only guarantee worth having for a route that
+ * deliberately skips every guard the real pages apply.
+ *
+ * The gate is VERCEL_ENV, not NODE_ENV. Vercel builds *every* deployment with
+ * NODE_ENV=production, preview branches included, so a NODE_ENV check would
+ * 404 the preview too and leave nowhere to review this but localhost.
+ * VERCEL_ENV distinguishes them:
+ *
+ *   undefined    → local `next dev`                        → renders
+ *   "preview"    → a branch deployment                     → renders
+ *   "production" → batch0.org / app.batch0.org             → 404
+ *
+ * So this can be looked at on a branch URL and cannot appear on the real site,
+ * including if this branch is ever merged to main. To close the preview door
+ * as well, change the check to `!== undefined`.
  */
 export const metadata = {
   title: "Live video preview · batch0",
@@ -19,6 +32,6 @@ export const metadata = {
 };
 
 export default function LivePreviewPage() {
-  if (process.env.NODE_ENV === "production") notFound();
+  if (process.env.VERCEL_ENV === "production") notFound();
   return <LivePreview />;
 }

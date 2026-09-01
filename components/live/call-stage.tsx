@@ -3,7 +3,7 @@ import { useState } from "react";
 import { VideoTile } from "@/components/live/video-tile";
 import { CallControls } from "@/components/live/call-controls";
 import { useLocalMedia } from "@/components/live/use-local-media";
-import type { LiveRole } from "@/lib/live";
+import { canSeeRoster, type LiveRole } from "@/lib/live";
 import { Radio, X, Send, Plug } from "lucide-react";
 
 export type StageParticipant = {
@@ -47,6 +47,10 @@ export function CallStage({
   connected?: boolean;
 }) {
   const canBroadcast = role === "host";
+  // Viewers must not be able to tell how big the audience is. Every
+  // roster-shaped affordance below hangs off this one call — see canSeeRoster
+  // in lib/live.ts for why it is a function of the role and not a prop.
+  const showRoster = canSeeRoster(role);
   const media = useLocalMedia({ autoStart: canBroadcast });
   const [panel, setPanel] = useState<"none" | "people" | "chat">("none");
   const [screenSharing, setScreenSharing] = useState(false);
@@ -70,10 +74,12 @@ export function CallStage({
               Recording
             </span>
           )}
-          <span>
-            {participants.length}{" "}
-            {participants.length === 1 ? "person" : "people"}
-          </span>
+          {showRoster && (
+            <span>
+              {participants.length}{" "}
+              {participants.length === 1 ? "person" : "people"}
+            </span>
+          )}
         </div>
       </header>
 
@@ -123,7 +129,14 @@ export function CallStage({
           )}
         </div>
 
-        {panel !== "none" && (
+        {/*
+          `showRoster` is re-checked here rather than trusted from the control
+          bar. The button that opens this panel is already hidden for viewers,
+          so this is belt-and-braces — but the cost is one boolean and the
+          failure it prevents is a viewer seeing the whole audience because
+          some later edit set `panel` from a keyboard shortcut or a deep link.
+        */}
+        {panel !== "none" && !(panel === "people" && !showRoster) && (
           <aside className="hidden w-72 shrink-0 flex-col rounded-2xl border border-line bg-wash md:flex">
             <div className="flex items-center justify-between border-b border-line px-4 py-3">
               <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-soft">
@@ -192,11 +205,13 @@ export function CallStage({
           canBroadcast ? () => setRecording((r) => !r) : undefined
         }
         recording={recording}
-        onToggleParticipants={() =>
-          setPanel((p) => (p === "people" ? "none" : "people"))
+        onToggleParticipants={
+          showRoster
+            ? () => setPanel((p) => (p === "people" ? "none" : "people"))
+            : undefined
         }
         onToggleChat={() => setPanel((p) => (p === "chat" ? "none" : "chat"))}
-        participantCount={participants.length}
+        participantCount={showRoster ? participants.length : undefined}
         canBroadcast={canBroadcast}
         onLeave={onLeave}
       />

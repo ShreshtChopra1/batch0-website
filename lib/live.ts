@@ -36,6 +36,36 @@ export type LiveRoom = {
   roomUrl: string | null;
 };
 
+// ---------------------------------------------------------------------------
+// Audience privacy
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether someone in this role may see who else is in the room, and how many.
+ *
+ * Hosts yes, viewers never. This is a product requirement, not a layout
+ * preference: a student watching a webinar must not be able to tell whether
+ * they are one of three people or one of thirty. Turnout is the host's
+ * business, and a visibly empty room changes how students behave in one.
+ *
+ * Kept here as a function of the role alone — no override parameter, no prop —
+ * so there is exactly one place to read and no call site can opt out of it by
+ * passing the wrong flag. `CallStage` derives every roster-shaped affordance
+ * (the header count, the participants button, the people panel) from this.
+ *
+ * Two things this does NOT do on its own, both of which live at the provider
+ * layer and are written up in docs/live-video.md:
+ *
+ *  1. The server must not send a viewer the roster in the first place. Hiding
+ *     a list the client already holds is a CSS-deep guarantee.
+ *  2. The video provider has its own participant APIs. With Daily that means
+ *     minting viewer tokens with `hasPresence: false` so viewers are absent
+ *     from every other client's participant list.
+ */
+export function canSeeRoster(role: LiveRole): boolean {
+  return role === "host";
+}
+
 export type LiveEvent = {
   id: string;
   title: string;

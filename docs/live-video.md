@@ -204,7 +204,56 @@ live/starting-soon inside the join window). `app/api/events/[id]/ics/route.ts`
 should emit the batch0 URL rather than `zoom_url` for hosted events, so calendar
 reminders point at the site.
 
-### 4c. 1:1 calls
+### 4c. Hiding the audience — required
+
+**A student in a webinar must never be able to tell how many other people are
+watching.** Turnout is the host's business, and a visibly thin room changes how
+students behave in one. This is a product requirement, not a preference, so it
+is enforced at three layers rather than styled at one.
+
+**Layer 1 — the UI (done).** `canSeeRoster(role)` in `lib/live.ts` is the single
+source of truth, and `CallStage` derives every roster-shaped affordance from it:
+the header count, the participants button, and the people panel all disappear
+for viewers. It is a function of the role with no override parameter, so no call
+site can opt out by passing the wrong flag, and `lib/live.test.ts` asserts the
+negative case and fails if a future `LiveRole` is added without a decision.
+
+**Layer 2 — the server (to do).** Do not send a viewer the roster at all. Hiding
+a list the client already holds is a CSS-deep guarantee: View Source defeats it.
+The join route should shape its props by role — a viewer gets no `participants`
+array, not an array it declines to render.
+
+**Layer 3 — the provider (to do, and the one that actually binds).** The video
+SDK has its own participant APIs, and they answer to the client, not to us. With
+Daily:
+
+- Mint **viewer tokens with `permissions: { hasPresence: false }`**. Hidden
+  participants are absent from `participants()` for everyone else and cannot
+  send media — so the roster genuinely is not delivered to other clients, rather
+  than delivered and hidden.
+- Set **`showParticipantsBar: false`** on Prebuilt, which is the supported
+  companion to `owner_only_broadcast`.
+
+**The honest caveat.** Even with all three, Daily's client-side
+[`participantCounts()`](https://docs.daily.co/reference/daily-js/instance-methods/participant-counts)
+returns `{ present, hidden }`, and a student who opens devtools can read the
+hidden count. They cannot learn *who* is watching — `hasPresence: false` really
+does withhold identities — but the aggregate number is reachable by someone who
+goes looking.
+
+If the count must be *unavailable* rather than merely unshown, the answer is not
+a better flag, it is a different transport: broadcast the webinar as **HLS**, so
+viewers receive a video stream and are never participants in a room at all.
+There is no roster on the client because there is no room. The costs are real
+and worth weighing before choosing it — roughly 10–30 seconds of latency, which
+rules out live Q&A over video, and $0.03 per encoded minute on top of the call
+itself.
+
+Recommendation: ship layers 1–3, which defeat every non-technical student and
+all identity disclosure. Revisit HLS only if the exact headcount leaking to
+someone determined enough to open devtools is genuinely unacceptable.
+
+### 4d. 1:1 calls
 
 **New permission key.** Add to `PERMISSION_KEYS` and `PERMISSION_GROUPS` in
 `lib/permissions.ts`:
@@ -286,7 +335,7 @@ Each step is shippable on its own.
 
 - Should hosted webinars replace the Zoom field entirely, or coexist? (Plan
   assumes coexist — `live_mode` defaults to `external`.)
-- Who can each role invite? (See scope note in 4c.)
+- Who can each role invite? (See scope note in 4d.)
 - Do webinars need recording from day one, or is live-only enough to start?
 - Should the existing office-hours `zoom_url` also become a hosted room? Same
   primitive, small extra step — worth folding in once step 1 works.
