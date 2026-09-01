@@ -3,7 +3,14 @@ import { requireViewer } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
 import { getCohortEvents } from "@/lib/app-cache";
 import { LocalTime } from "@/components/ui/local-time";
-import { AppHeader, AppBody, Section, Empty, Row } from "@/components/app/frame";
+import {
+  AppHeader,
+  AppBody,
+  Section,
+  Empty,
+  Row,
+  Alert,
+} from "@/components/app/frame";
 import type { Role } from "@/lib/types";
 
 export const metadata = { title: "Events · batch0" };
@@ -30,6 +37,35 @@ const TYPE_LABEL: Record<string, string> = {
 export default async function StudentAppEvents() {
   const { profile } = await requireViewer();
   const access = await getStudentAccess(profile.role as Role);
+
+  // ENROLLMENT GATE — must stay above any query.
+  //
+  // The app shell admits anyone with a live application (lib/app-eligibility.ts),
+  // which is deliberate: a waitlisted applicant should be able to open the app.
+  // But events are enrolled-only content, and every read here goes through
+  // createAdminClient(), which uses the service role and therefore BYPASSES the
+  // `events read` RLS policy that would otherwise have enforced this. RLS is not
+  // a backstop on this code path; this check is the only thing standing between
+  // an unpaid applicant and a cohort's live Zoom join links.
+  //
+  // /dashboard/events draws the same line with <LockedFeature>. A phone surface
+  // must never be more permissive than the page it mirrors.
+  //
+  // Staff resolve as enrolled (lib/access.ts), so previewing still works.
+  if (!access.enrolled) {
+    return (
+      <>
+        <AppHeader title="Events" eyebrow="Locked" />
+        <AppBody>
+          <Alert tone="info" title="Events unlock at enrollment.">
+            Office hours, workshops and demo day show up here once your seat is
+            paid for.
+          </Alert>
+        </AppBody>
+      </>
+    );
+  }
+
   const nowIso = new Date().toISOString();
 
   // Cached (lib/app-cache.ts): the calendar is staff-authored and changes a few

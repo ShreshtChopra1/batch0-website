@@ -2,7 +2,7 @@ import { requireViewer } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
 import { getCohortAnnouncements } from "@/lib/app-cache";
 import { LocalTime } from "@/components/ui/local-time";
-import { AppHeader, AppBody, Empty } from "@/components/app/frame";
+import { AppHeader, AppBody, Empty, Alert } from "@/components/app/frame";
 import type { Role } from "@/lib/types";
 
 export const metadata = { title: "Announcements · batch0" };
@@ -23,6 +23,30 @@ export const dynamic = "force-dynamic";
 export default async function StudentAppAnnouncements() {
   const { profile } = await requireViewer();
   const access = await getStudentAccess(profile.role as Role);
+
+  // ENROLLMENT GATE — must stay above any query. Same reasoning as
+  // app/app/(student)/events/page.tsx: the reads below run through
+  // createAdminClient() with the service role, so the `announcements` RLS
+  // policy from migration 0027 (which requires a row in `enrollments` for BOTH
+  // the cohort-scoped and the global branch) never applies. This check is the
+  // enforcement, not a convenience.
+  //
+  // lib/nav-config.ts already lists /dashboard/announcements in
+  // ENROLLED_ONLY_HREFS for exactly this reason, and
+  // /dashboard/announcements renders <LockedFeature> here.
+  if (!access.enrolled) {
+    return (
+      <>
+        <AppHeader title="Announcements" eyebrow="Locked" />
+        <AppBody>
+          <Alert tone="info" title="Announcements open at enrollment.">
+            This is how the team reaches your cohort — it unlocks once your seat
+            is paid for.
+          </Alert>
+        </AppBody>
+      </>
+    );
+  }
   // Mirrors the RLS policy on `announcements`: cohort-scoped posts plus the
   // global ones. A student with no cohort sees only the global posts rather
   // than an error. Cached per cohort (lib/app-cache.ts) — staff-authored

@@ -139,7 +139,7 @@ export default async function StudentAppHome() {
     { data: weekLessons },
     { data: challengeEntry },
   ] = await Promise.all([
-    cohortId
+    cohortId && access.enrolled
       ? admin
           .from("events")
           .select("id, title, type, starts_at, location, zoom_url")
@@ -149,7 +149,7 @@ export default async function StudentAppHome() {
           .order("starts_at", { ascending: true })
           .limit(2)
       : Promise.resolve({ data: null }),
-    cohortId
+    cohortId && access.enrolled
       ? admin
           .from("announcements")
           .select("id, title, body, created_at")
@@ -356,7 +356,7 @@ export default async function StudentAppHome() {
           </>
         )}
 
-        {announcement && (
+        {access.enrolled && announcement && (
           <Section
             title="Latest announcement"
             action={{ href: "/app/announcements", label: "All" }}
@@ -438,9 +438,9 @@ function ApplicationState({ status }: { status: string | null }) {
       action={
         state.cta && (
           <ActionLink href={state.cta.href} size="sm">
-
+            {state.cta.label}
             <ArrowRight className="h-3.5 w-3.5" />
-            </ActionLink>
+          </ActionLink>
         )
       }
     >
