@@ -129,12 +129,18 @@ export default async function AdminPassesPage() {
   // Onshape at all — just a mailer and the pepper — which is exactly why it
   // works in environments where minting cards doesn't.
   //
-  // Through transportStatus(), NOT process.env.RESEND_API_KEY. Which mailer is
-  // live is a database setting an admin chooses at /admin/email/settings, and
-  // this site sends over SMTP — so reading the Resend key directly disabled
-  // the send button on a perfectly working install and made the whole feature
-  // unreachable in production. transportStatus is the one place that knows,
-  // and it is what /admin/email/settings reports from.
+  // Through transportStatus(), NOT process.env.RESEND_API_KEY.
+  //
+  // Which mailer is live is a DATABASE setting an admin picks at
+  // /admin/email/settings, not an environment variable. Reading the Resend key
+  // asks the wrong source: it happens to agree while that setting says
+  // "resend", and stops agreeing the moment someone switches to SMTP — which
+  // the product exists to support, and which the settings page recommends when
+  // a domain isn't verified. On that install the button would switch itself
+  // off with the whole mail path working, and blame a key that changes
+  // nothing. transportStatus() is the one function that knows, it actually
+  // connects to SMTP before answering, and it is what /admin/email/settings
+  // reports from — so the two pages can't disagree about whether email works.
   const transport = await transportStatus();
   const hasPepper = !!process.env.FOUNDER_PASS_PEPPER;
   const canEmail = transport.ok && hasPepper;
