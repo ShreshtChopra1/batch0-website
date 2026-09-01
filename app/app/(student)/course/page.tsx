@@ -5,7 +5,13 @@ import { getStudentAccess } from "@/lib/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cohortWeek } from "@/lib/cohort-week";
 import { fmtDateOnly } from "@/lib/pre-cohort";
-import { AppHeader, AppBody, Empty, Alert } from "@/components/app/frame";
+import {
+  AppHeader,
+  AppBody,
+  Empty,
+  Alert,
+  Row,
+} from "@/components/app/frame";
 import type { Role } from "@/lib/types";
 
 export const metadata = { title: "Course · batch0" };
@@ -157,7 +163,7 @@ export default async function StudentAppCourse() {
                   open={current}
                   className="group overflow-hidden rounded-2xl border border-line bg-wash open:bg-paper"
                 >
-                  <summary className="press flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 active:bg-wash [&::-webkit-details-marker]:hidden">
+                  <summary className="press flex min-h-[4.25rem] cursor-pointer list-none items-center gap-3.5 px-5 py-4 active:bg-wash [&::-webkit-details-marker]:hidden">
                     <div className="min-w-0 flex-1">
                       <p
                         className={`font-mono text-[10px] font-medium uppercase tracking-[0.2em] ${
@@ -167,11 +173,11 @@ export default async function StudentAppCourse() {
                         Week {m.week}
                         {current && " · this week"}
                       </p>
-                      <p className="mt-1 truncate text-[15px] leading-tight text-ink">
+                      <p className="mt-1.5 truncate text-[15.5px] leading-snug text-ink">
                         {m.title}
                       </p>
                     </div>
-                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">
+                    <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-ink-faint">
                       {ahead && items.length === 0 ? (
                         <Lock className="h-3.5 w-3.5" />
                       ) : (
@@ -180,40 +186,44 @@ export default async function StudentAppCourse() {
                     </span>
                   </summary>
 
-                  <div className="border-t border-line px-4">
+                  <div className="border-t border-line px-5">
                     {items.length === 0 ? (
-                      <p className="py-4 text-[13px] text-ink-faint">
+                      <p className="py-5 text-[13.5px] text-ink-faint">
                         Lessons for this week aren&apos;t published yet.
                       </p>
                     ) : (
                       items.map((l) => {
-                        const complete = doneIds.has(l.id as string);
+                        const complete = doneIds.has(l.id);
                         return (
-                          <Link
-                            key={l.id as string}
+                          <Row
+                            key={l.id}
+                            label={l.title}
                             href={`/dashboard/course/${l.id}`}
+                            muted={complete}
+                            // The lesson player is a dynamic route with no
+                            // loading boundary, and a week can list a dozen
+                            // lessons — prefetching every visible one is a
+                            // dozen server renders thrown away by
+                            // staleTimes.dynamic = 0.
                             prefetch={false}
-                            className="press -mx-2 flex min-h-[52px] items-center gap-3 border-b border-line px-2 last:border-0 active:bg-wash"
-                          >
-                            {complete ? (
-                              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                            ) : (
-                              <Circle className="h-4 w-4 shrink-0 text-ink-faint" />
-                            )}
-                            <span
-                              className={`min-w-0 flex-1 truncate text-[14px] ${
-                                complete ? "text-ink-soft" : "text-ink"
-                              }`}
-                            >
-                              {l.title}
-                            </span>
-                            {!!l.duration_seconds && (
-                              <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">
-                                {Math.round((l.duration_seconds as number) / 60)}m
-                              </span>
-                            )}
-                            <PlayCircle className="h-4 w-4 shrink-0 text-ink-faint" />
-                          </Link>
+                            leading={
+                              complete ? (
+                                <CheckCircle2 className="h-[18px] w-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" />
+                              ) : (
+                                <Circle className="h-[18px] w-[18px] shrink-0 text-ink-faint" />
+                              )
+                            }
+                            right={
+                              <div className="flex shrink-0 items-center gap-2.5">
+                                {!!l.duration_seconds && (
+                                  <span className="font-mono text-[11.5px] tabular-nums text-ink-faint">
+                                    {Math.round(l.duration_seconds / 60)}m
+                                  </span>
+                                )}
+                                <PlayCircle className="h-[18px] w-[18px] text-ink-faint" />
+                              </div>
+                            }
+                          />
                         );
                       })
                     )}

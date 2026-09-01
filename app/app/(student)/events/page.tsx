@@ -3,7 +3,7 @@ import { requireViewer } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { LocalTime } from "@/components/ui/local-time";
-import { AppHeader, AppBody, Section, Empty } from "@/components/app/frame";
+import { AppHeader, AppBody, Section, Empty, Row } from "@/components/app/frame";
 import type { Role } from "@/lib/types";
 
 export const metadata = { title: "Events · batch0" };
@@ -113,23 +113,16 @@ export default async function StudentAppEvents() {
               {(past ?? [])
                 .filter((e) => e.recording_url)
                 .map((e) => (
-                  <a
+                  <Row
                     key={e.id as string}
+                    label={e.title as string}
+                    meta={<LocalTime value={e.starts_at as string} mode="date" />}
                     href={e.recording_url as string}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="press -mx-2 flex min-h-[54px] items-center gap-3 border-b border-line px-2 last:border-0 active:bg-wash"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[14px] text-ink">
-                        {e.title as string}
-                      </p>
-                      <p className="mt-1 font-mono text-[11px] tabular-nums text-ink-faint">
-                        <LocalTime value={e.starts_at as string} mode="date" />
-                      </p>
-                    </div>
-                    <Video className="h-4 w-4 shrink-0 text-ink-faint" />
-                  </a>
+                    external
+                    right={
+                      <Video className="h-[18px] w-[18px] shrink-0 text-ink-faint" />
+                    }
+                  />
                 ))}
             </div>
           </Section>
