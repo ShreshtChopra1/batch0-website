@@ -18,6 +18,7 @@ import { baseVariables, enqueueEmail } from "@/lib/email/dispatch";
 import { resolveAudience, audienceAddresses, MAX_AUDIENCE } from "@/lib/email/audience";
 import { isAudienceSegment } from "@/lib/email/catalog";
 import { exampleValues, extractTags } from "@/lib/email/vars";
+import { STATUS_RANK } from "@/app/admin/email/blast/shared";
 import { parseAddresses, MAX_DIRECT_RECIPIENTS } from "./shared";
 
 /**
@@ -40,11 +41,13 @@ import { parseAddresses, MAX_DIRECT_RECIPIENTS } from "./shared";
 export type ComposeDraft = {
   /** Free-typed addresses, comma/newline separated. */
   to: string;
-  /** Or an audience segment instead. */
-  mode: "addresses" | "segment";
+  /** Address mode, a whole segment, or a hand-picked set of students. */
+  mode: "addresses" | "segment" | "students";
   segment: string;
   cohortId: string;
   includeParents: boolean;
+  /** Profile ids picked in "students" mode. Resolved to addresses server-side. */
+  studentIds: string[];
   /** Start from a saved template, or write a one-off. */
   templateId: string;
   subject: string;
@@ -104,6 +107,39 @@ async function resolveRecipients(
         };
       }),
     };
+  }
+
+  if (draft.mode === "students") {
+    // Hand-picked profile ids. Re-resolved to addresses here — the browser
+    // only ever hands us ids, so a tampered request can't redirect the send to
+    // an arbitrary address, and the role guard keeps it to actual students.
+    const ids = Array.from(new Set(draft.studentIds ?? [])).filter(Boolean);
+    if (ids.length === 0) return { ok: false, error: "Pick at least one student." };
+    if (ids.length > MAX_AUDIENCE) {
+      return { ok: false, error: `That's ${ids.length} students. Max ${MAX_AUDIENCE}.` };
+    }
+    const admin = createAdminClient();
+    const seen = new Set<string>();
+    const people: { email: string; name: string | null; userId: string | null }[] = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const { data, error } = await admin
+        .from("profiles")
+        .select("id, email, full_name")
+        .in("id", ids.slice(i, i + 500))
+        .eq("role", "student");
+      if (error) return { ok: false, error: error.message };
+      for (const p of (data ?? []) as any[]) {
+        if (!p.email) continue;
+        const key = String(p.email).toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        people.push({ email: p.email, name: p.full_name ?? null, userId: p.id });
+      }
+    }
+    if (people.length === 0) {
+      return { ok: false, error: "None of the selected students have an email." };
+    }
+    return { ok: true, people };
   }
 
   if (!isAudienceSegment(draft.segment)) {
@@ -223,6 +259,61 @@ export async function countCompose(
   await assertPermission("email.send");
   const r = await resolveRecipients(draft);
   return r.ok ? { ok: true, count: r.people.length } : r;
+}
+
+export type ComposeStudent = {
+  id: string;
+  email: string;
+  name: string | null;
+  /** Best (furthest-along) application status, or null if never applied. */
+  appStatus: string | null;
+  cohorts: string[];
+};
+
+/**
+ * Every student with an email, for the "pick students" recipient mode. The
+ * page doesn't ship the directory as props — the form asks for it once, the
+ * first time that mode is opened. Selection is by id; addresses are resolved
+ * again in resolveRecipients, never trusted from the client.
+ */
+export async function listComposeStudents(): Promise<
+  { ok: true; students: ComposeStudent[] } | { ok: false; error: string }
+> {
+  await assertPermission("email.send");
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("profiles")
+    .select(
+      "id, email, full_name, applications!applications_user_id_fkey(status, created_at), enrollments!enrollments_user_id_fkey(cohort:cohorts(name))",
+    )
+    .eq("role", "student")
+    .not("email", "is", null)
+    .order("full_name", { ascending: true })
+    .limit(5000);
+  if (error) return { ok: false, error: error.message };
+
+  const students: ComposeStudent[] = (data ?? [])
+    .filter((p: any) => p.email)
+    .map((p: any) => {
+      const statuses: string[] = (p.applications ?? []).map((a: any) => a.status);
+      const appStatus =
+        statuses.length > 0
+          ? statuses.reduce((best, s) =>
+              (STATUS_RANK[s] ?? -1) > (STATUS_RANK[best] ?? -1) ? s : best,
+            )
+          : null;
+      const cohorts: string[] = (p.enrollments ?? [])
+        .map((e: any) => (Array.isArray(e.cohort) ? e.cohort[0]?.name : e.cohort?.name))
+        .filter(Boolean);
+      return {
+        id: p.id,
+        email: p.email,
+        name: p.full_name || null,
+        appStatus,
+        cohorts,
+      };
+    });
+  return { ok: true, students };
 }
 
 export async function sendTestCompose(

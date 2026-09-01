@@ -31,7 +31,7 @@ export default async function AdminAppReview() {
   const canDecide = can(caps, "applications.review");
   const admin = createAdminClient();
 
-  const { data: apps, count } = await admin
+  const { data: apps, count, error } = await admin
     .from("applications")
     .select(
       "id, user_id, full_name, age, grade, school, city, country, hours_per_week, why_join, startup_idea, experience, ai_score, ai_summary, status, submitted_at, profile:profiles!applications_user_id_fkey(email)",
@@ -76,15 +76,27 @@ export default async function AdminAppReview() {
   });
 
   const total = count ?? items.length;
+  // Split because the tab badge counts `submitted` only, and a header that
+  // said "5 awaiting a decision" beside a badge reading 3 makes the admin
+  // distrust both numbers. Waitlisted rows are re-decidable, not waiting.
+  const submitted = items.filter((i) => i.status === "submitted").length;
+  const waitlisted = items.length - submitted;
 
   return (
     <>
       <AppHeader
         title="Review"
         eyebrow={
-          total === 0
-            ? "Queue clear"
-            : `${total} awaiting a decision`
+          // An error is not an empty queue. Saying "Queue clear" when the
+          // query failed tells the admin their work is done while the badge
+          // insists otherwise — the one state where being quiet is dangerous.
+          error
+            ? "Couldn't load the queue"
+            : total === 0
+              ? "Queue clear"
+              : waitlisted > 0
+                ? `${submitted} awaiting · ${waitlisted} waitlisted`
+                : `${submitted} awaiting a decision`
         }
       />
       <AppBody>
@@ -97,7 +109,12 @@ export default async function AdminAppReview() {
           </div>
         )}
 
-        {items.length === 0 ? (
+        {error ? (
+          <Alert tone="warn" title="The applications query failed.">
+            This is not an empty queue — nothing was read. Reload, and if it
+            keeps failing open the full panel at /admin/applications.
+          </Alert>
+        ) : items.length === 0 ? (
           <Empty>Nothing waiting. Every application has a decision.</Empty>
         ) : (
           <div className="space-y-2.5">

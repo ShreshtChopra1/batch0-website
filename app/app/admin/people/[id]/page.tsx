@@ -32,58 +32,86 @@ export default async function AdminAppPerson({
 }: {
   params: { id: string };
 }) {
-  const { caps } = await requirePermission("people.view");
   const admin = createAdminClient();
-
-  const { data: person } = await admin
-    .from("profiles")
-    .select("id, full_name, email, role, discord_username, created_at")
-    .eq("id", params.id)
-    .maybeSingle();
-  if (!person) notFound();
-
   const weekStart = isoWeekStart();
-  const [
-    { data: application },
-    { data: enrollment },
-    { data: membership },
-    { data: charges },
-    { data: checkins },
-  ] = await Promise.all([
-    admin
-      .from("applications")
-      .select("id, status, submitted_at, cohort:cohorts(name)")
-      .eq("user_id", params.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    admin
-      .from("enrollments")
-      .select("enrolled_at, cohort:cohorts(name, starts_on)")
-      .eq("user_id", params.id)
-      .maybeSingle(),
-    admin
-      .from("team_members")
-      .select("role, team:teams(id, name)")
-      .eq("user_id", params.id)
-      .limit(1)
-      .maybeSingle(),
-    can(caps, "charges.manage") || can(caps, "payments.view")
-      ? admin
-          .from("user_charges")
-          .select("id, kind, amount_cents, description, status")
-          .eq("user_id", params.id)
-          .eq("status", "pending")
-      : { data: null },
+
+  // One wave, not three. Every read here is keyed on params.id and on nothing
+  // the permission check produces, so the guard and all six queries go out
+  // together instead of guard -> profile -> the rest. The charges query is the
+  // one exception: it is permission-dependent, so it is chained off the guard
+  // rather than the batch, which still lets it overlap everything else.
+  type PendingCharge = {
+    id: string;
+    kind: string;
+    amount_cents: number;
+    description: string;
+    status: string;
+  };
+
+  const guard = requirePermission("people.view");
+  // Awaited inside so this settles to one shape rather than a union of a
+  // PostgREST builder and a plain object, which Promise.all cannot destructure.
+  const chargesPromise: Promise<PendingCharge[]> = guard.then(async ({ caps: c }) => {
+    if (!can(c, "charges.manage") && !can(c, "payments.view")) return [];
+    const { data } = await admin
+      .from("user_charges")
+        .select("id, kind, amount_cents, description, status")
+        .eq("user_id", params.id)
+        .eq("status", "pending");
+    return (data ?? []) as PendingCharge[];
+  });
+
+  const [viewer, personRes, appRes, enrollRes, memberRes, charges, checkinsRes] =
+    await Promise.all([
+      guard,
+      admin
+        .from("profiles")
+        .select("id, full_name, email, role, discord_username, created_at")
+        .eq("id", params.id)
+        .maybeSingle(),
+      admin
+        .from("applications")
+        .select("id, status, submitted_at, cohort:cohorts(name)")
+        .eq("user_id", params.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      admin
+        .from("enrollments")
+        .select("enrolled_at, cohort:cohorts(name, starts_on)")
+        .eq("user_id", params.id)
+      // One row per cohort. Without this an admin opening a returning
+      // student's record sees "Not enrolled" for someone plainly enrolled.
+        .order("enrolled_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      admin
+        .from("team_members")
+        .select("role, team:teams(id, name)")
+        .eq("user_id", params.id)
+        .limit(1)
+        .maybeSingle(),
+      chargesPromise,
     // The last three weeks is enough to see a pattern; more is a report, not a
     // glance.
-    admin
-      .from("student_checkins")
-      .select("id, week_start, accomplished, blockers")
-      .eq("user_id", params.id)
-      .order("week_start", { ascending: false })
-      .limit(3),
-  ]);
+      admin
+        .from("student_checkins")
+        .select("id, week_start, accomplished, blockers")
+        .eq("user_id", params.id)
+        .order("week_start", { ascending: false })
+        .limit(3),
+    ]);
+
+  const { caps } = viewer;
+  const person = personRes.data;
+  const application = appRes.data;
+  const enrollment = enrollRes.data;
+  const membership = memberRes.data;
+  const checkins = checkinsRes.data;
+
+  // The batch above fetches unconditionally, so the 404 check moved down here.
+  // It still runs before anything is rendered.
+  if (!person) notFound();
 
   const appCohort = embed<{ name: string | null }>(application?.cohort);
   const enrollCohort = embed<{ name: string | null; starts_on: string | null }>(
@@ -160,7 +188,16 @@ export default async function AdminAppPerson({
                 appCohort?.name ??
                 (application ? "No cohort assigned" : "Never applied")
               }
-              href={application ? `/admin/applications/${application.id}` : undefined}
+              // Gated on the DESTINATION's permission, not this page's. A role
+              // with people.view but not applications.view would otherwise tap
+              // through and be bounced to /admin by the route guard — a link
+              // that looks live and silently throws you somewhere else is worse
+              // than plain text.
+              href={
+                application && can(caps, "applications.view")
+                  ? `/admin/applications/${application.id}`
+                  : undefined
+              }
               right={
                 application ? (
                   <StatusBadge status={application.status as string} />
@@ -187,7 +224,13 @@ export default async function AdminAppPerson({
               label="Team"
               value={team ? team.name : "No team"}
               muted={!team}
-              href={team ? `/admin/teams/${team.id}` : undefined}
+              // Same reasoning as the Application row above: /admin/teams
+              // requires teams.manage.
+              href={
+                team && can(caps, "teams.manage")
+                  ? `/admin/teams/${team.id}`
+                  : undefined
+              }
             />
             <Row
               label="This week's check-in"

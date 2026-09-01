@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPassGrantForUser } from "@/lib/founder-pass";
-import { grantDiscountCents } from "@/lib/founder-pass-tiers";
+import { announceAcceptance } from "@/lib/admissions";
 import { markRebuildReviewedForUser } from "@/lib/founder-pass-perks";
 import { assertPermission } from "@/lib/server-guards";
 import { sendEmail } from "@/lib/email/send";
@@ -155,62 +155,25 @@ export async function decideApplication(
     const profile = Array.isArray(a.profile) ? a.profile[0] : a.profile;
     const listPriceCents = cohort?.price_cents ?? 13000;
     if (decision === "accepted") {
-      // Holders pay less by their GRANT — tier plus any hand-set override
-      // (migrations 0055/0056) — and checkout applies it server-side, so the
-      // acceptance email must quote the same number it will charge.
-      //
-      // Uses the LIST price, not a regional one: this runs in an admin
-      // request, so there is no applicant geography to read here. Someone on a
-      // regional price is quoted slightly high and then charged less; the
-      // dashboard and Stripe both compute the regional figure. A full ride
-      // still resolves to $0 either way, since the discount clamps to whatever
-      // price it is given.
-      const priceCents = Math.max(
-        0,
-        listPriceCents -
-          (applicantGrant ? grantDiscountCents(applicantGrant, listPriceCents) : 0),
+      // Every acceptance — clicked here, or granted automatically by a virtual
+      // founder pass on submit — goes out through the one function in
+      // lib/admissions.ts. Holders pay less by their GRANT (tier plus any
+      // hand-set override, migrations 0055/0056) and checkout applies that
+      // server-side, so having two copies of "compose the acceptance" was one
+      // edit away from the email quoting a price Stripe doesn't charge.
+      await announceAcceptance(
+        admin,
+        {
+          id: a.id,
+          user_id: a.user_id,
+          full_name: a.full_name ?? null,
+          cohortName: cohort?.name ?? null,
+          listPriceCents,
+          applicantEmail: profile?.email ?? null,
+          applicantName: a.full_name ?? profile?.full_name ?? null,
+        },
+        applicantGrant,
       );
-      const acceptedName = a.full_name ?? profile?.full_name ?? null;
-      if (profile?.email) {
-        await sendTemplated("application.accepted", {
-          to: profile.email,
-          toName: acceptedName,
-          userId: a.user_id,
-          vars: {
-            cohort_name: cohort?.name ?? "batch0",
-            amount: `$${(priceCents / 100).toFixed(0)}`,
-            application_status: "accepted",
-            pay_url: `${env.siteUrl}/dashboard/accepted`,
-          },
-          fallback: () =>
-            Templates.applicationAccepted({
-              name: acceptedName,
-              cohortName: cohort?.name ?? "batch0",
-              priceCents,
-            }),
-        });
-        // Anything an admin has built on top of the acceptance — a payment
-        // nudge three days later, say — hangs off this.
-        await emitEmailEvent("application.accepted", {
-          email: profile.email,
-          name: acceptedName,
-          userId: a.user_id,
-          vars: {
-            cohort_name: cohort?.name ?? "batch0",
-            amount: `$${(priceCents / 100).toFixed(0)}`,
-            application_status: "accepted",
-            pay_url: `${env.siteUrl}/dashboard/accepted`,
-          },
-          dedupeSeed: `application.accepted:${a.id}`,
-        });
-      }
-      await notify({
-        userId: a.user_id,
-        type: "application_accepted",
-        title: "You're in",
-        body: `Welcome to ${cohort?.name ?? "batch0"}. Pay to lock in your seat.`,
-        link: "/dashboard/accepted",
-      });
     } else if (decision === "waitlisted") {
       const waitlistedName = a.full_name ?? profile?.full_name ?? null;
       if (profile?.email) {
@@ -289,37 +252,11 @@ export async function decideApplication(
     console.error("[applications] decide notify failed", err);
   }
 
-  // Discord side-effects (best-effort, only fire on accept). Wrapped
-  // so a missing migration 0008 (no discord_user_id column) just
-  // silently skips Discord — the accept itself stays atomic.
-  if (decision === "accepted") {
-    try {
-      const a = app as any;
-      const profile = Array.isArray(a.profile) ? a.profile[0] : a.profile;
-      const cohort = Array.isArray(a.cohort) ? a.cohort[0] : a.cohort;
-      const discord = await loadDiscordHandle(admin, a.user_id);
-      if (discord?.discord_user_id) {
-        await syncMemberRoles(
-          discord.discord_user_id,
-          (discord.role as any) ?? "student",
-        );
-      }
-      const settings = await getDiscordSettings();
-      if (settings.adminFeedChannelId) {
-        await postChannelMessage(settings.adminFeedChannelId, {
-          embeds: [
-            announcementEmbed({
-              title: `Accepted: ${a.full_name ?? profile?.full_name ?? profile?.email ?? "applicant"}`,
-              body: `Cohort: ${cohort?.name ?? "—"}`,
-              link: `${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/admin/applications/${applicationId}`,
-            }),
-          ],
-        });
-      }
-    } catch (err) {
-      console.error("[applications] discord sync failed", err);
-    }
-  }
+  // The Discord role sync and the staff-feed post used to live here as a
+  // separate `if (decision === "accepted")` block. They moved into
+  // announceAcceptance() with the email, because they are the same event: an
+  // acceptance that emails the student but never gives them the Discord role
+  // is a half-admission, and the auto-admit path needs both too.
 
   revalidatePath(`/admin/applications/${applicationId}`);
   revalidatePath("/admin/applications");

@@ -197,27 +197,60 @@ export function Stat({
 }
 
 /**
- * A list row. `href` makes the whole row the tap target rather than the label
- * inside it — on a phone, a 300px-wide row with a 60px hit area is the single
- * most common reason a screen feels broken.
+ * A list row — the single definition of what a row in this app measures.
+ *
+ * That "single" is the point. Three screens (People, Events, Course) used to
+ * hand-roll this markup because Row couldn't express what they needed: a
+ * leading icon, or an external link. So they each froze a copy of the metrics
+ * at the moment they were written, and when the app's spacing was reworked
+ * they silently kept the old cramped numbers — People was still 58px tall with
+ * 15px text while every shared Row had moved to 62px and 15.5px. A primitive
+ * that can't cover its real call sites doesn't get used, and then it isn't a
+ * primitive. `leading`, `external` and `prefetch` exist to close exactly those
+ * three gaps.
+ *
+ * `href` makes the whole row the tap target rather than the label inside it —
+ * on a phone, a 300px-wide row with a 60px hit area is the single most common
+ * reason a screen feels broken.
  */
 export function Row({
   label,
   value,
   meta,
   href,
+  external,
+  prefetch,
+  leading,
   right,
   muted,
 }: {
   label: string;
-  value?: string;
-  meta?: string;
+  /** Secondary line, in body type. */
+  value?: React.ReactNode;
+  /**
+   * Tertiary line, in mono — ids, emails, timestamps.
+   *
+   * ReactNode, not string: half the timestamps in this app render through
+   * <LocalTime>, which has to be a component (the server has no idea what
+   * timezone the reader is in). Typing these slots as `string` is what pushed
+   * the Events list into hand-rolling its own row in the first place.
+   */
+  meta?: React.ReactNode;
   href?: string;
+  /** Render an <a target="_blank"> instead of a <Link>. For off-site URLs. */
+  external?: boolean;
+  /** Pass false for links to routes with no loading boundary — prefetching a
+   *  dynamic route under staleTimes.dynamic=0 is a render thrown away, and a
+   *  long list would pay it once per visible row. */
+  prefetch?: boolean;
+  /** Icon slot before the text — completion state, status. */
+  leading?: React.ReactNode;
   right?: React.ReactNode;
   muted?: boolean;
 }) {
   const body = (
     <div className="flex min-h-[3.875rem] items-center gap-3.5 py-3.5">
+      {leading}
       <div className="min-w-0 flex-1">
         <p
           className={`truncate text-[15.5px] leading-snug ${
@@ -232,7 +265,7 @@ export function Row({
           </p>
         )}
         {meta && (
-          <p className="mt-1 truncate font-mono text-[11.5px] tabular-nums text-ink-faint">
+          <p className="mt-1 truncate font-mono text-[11.5px] text-ink-faint">
             {meta}
           </p>
         )}
@@ -241,11 +274,21 @@ export function Row({
     </div>
   );
   if (!href) return <div className="border-b border-line last:border-0">{body}</div>;
+
+  // The negative margin lets the pressed state bleed past the list's padding to
+  // the card edge, which is what makes a tap feel like it hit the row rather
+  // than a box inside it.
+  const cls =
+    "press -mx-2 block rounded-lg border-b border-line px-2 last:border-0 active:bg-wash";
+  if (external) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+        {body}
+      </a>
+    );
+  }
   return (
-    <Link
-      href={href}
-      className="press -mx-2 block rounded-lg border-b border-line px-2 last:border-0 active:bg-wash"
-    >
+    <Link href={href} prefetch={prefetch} className={cls}>
       {body}
     </Link>
   );

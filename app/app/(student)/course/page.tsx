@@ -4,8 +4,15 @@ import { requireViewer } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cohortWeek } from "@/lib/cohort-week";
+import { getSyllabus, type SyllabusModule } from "@/lib/app-cache";
 import { fmtDateOnly } from "@/lib/pre-cohort";
-import { AppHeader, AppBody, Empty, Alert } from "@/components/app/frame";
+import {
+  AppHeader,
+  AppBody,
+  Empty,
+  Alert,
+  Row,
+} from "@/components/app/frame";
 import type { Role } from "@/lib/types";
 
 export const metadata = { title: "Course · batch0" };
@@ -72,6 +79,10 @@ export default async function StudentAppCourse() {
       .from("enrollments")
       .select("cohort_id, cohort:cohorts(name, starts_on)")
       .eq("user_id", profile.id)
+      // See the note on the same query in home/page.tsx: one row per cohort,
+      // so a returning student needs the newest rather than "the" enrollment.
+      .order("enrolled_at", { ascending: false })
+      .limit(1)
       .maybeSingle(),
     admin
       .from("lesson_progress")
@@ -96,32 +107,21 @@ export default async function StudentAppCourse() {
     );
   }
 
-  // ---- Wave 2: the whole syllabus in one query ----
-  // Lessons ride along as a nested embed rather than a second `in("module_id",
-  // …)` query that could only be issued once the module ids were known. Same
-  // rows, one round trip instead of two.
-  const { data: modules } = await admin
-    .from("modules")
-    .select(
-      "id, week, title, summary, position, lessons(id, title, duration_seconds, position)",
-    )
-    .eq("cohort_id", cohortId)
-    .order("week", { ascending: true })
-    .order("position", { ascending: true })
-    .order("position", { ascending: true, referencedTable: "lessons" });
+  // ---- Wave 2: the whole syllabus, cached ----
+  // Lessons ride along as a nested embed rather than a second query keyed on
+  // the module ids, and the whole thing is cached per cohort for a minute
+  // (lib/app-cache.ts) because a syllabus is authored once and read constantly.
+  // Per-student progress is deliberately NOT part of that cache — it is fetched
+  // above, uncached, so finishing a lesson shows up immediately.
+  const modules = await getSyllabus(cohortId);
 
   const doneIds = new Set((progress ?? []).map((p) => p.lesson_id as string));
-  type LessonRow = {
-    id: string;
-    title: string;
-    duration_seconds: number | null;
-  };
-  const byModule = new Map<string, LessonRow[]>();
+  const byModule = new Map<string, SyllabusModule["lessons"]>();
   let totalLessons = 0;
   let doneLessons = 0;
-  for (const m of modules ?? []) {
-    const items = ((m.lessons ?? []) as LessonRow[]) ?? [];
-    byModule.set(m.id as string, items);
+  for (const m of modules) {
+    const items = m.lessons ?? [];
+    byModule.set(m.id, items);
     totalLessons += items.length;
     doneLessons += items.filter((l) => doneIds.has(l.id)).length;
   }
@@ -139,12 +139,12 @@ export default async function StudentAppCourse() {
         }
       />
       <AppBody>
-        {(modules ?? []).length === 0 ? (
+        {modules.length === 0 ? (
           <Empty>No modules published yet. They appear as each week opens.</Empty>
         ) : (
           <div className="space-y-2.5">
-            {(modules ?? []).map((m) => {
-              const items = byModule.get(m.id as string) ?? [];
+            {modules.map((m) => {
+              const items = byModule.get(m.id) ?? [];
               const done = items.filter((l) => doneIds.has(l.id)).length;
               const current = week !== null && m.week === week;
               // A module for a week that hasn't arrived is shown, but marked —
@@ -153,11 +153,11 @@ export default async function StudentAppCourse() {
               const ahead = week !== null && m.week > week;
               return (
                 <details
-                  key={m.id as string}
+                  key={m.id}
                   open={current}
                   className="group overflow-hidden rounded-2xl border border-line bg-wash open:bg-paper"
                 >
-                  <summary className="press flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 active:bg-wash [&::-webkit-details-marker]:hidden">
+                  <summary className="press flex min-h-[4.25rem] cursor-pointer list-none items-center gap-3.5 px-5 py-4 active:bg-wash [&::-webkit-details-marker]:hidden">
                     <div className="min-w-0 flex-1">
                       <p
                         className={`font-mono text-[10px] font-medium uppercase tracking-[0.2em] ${
@@ -167,11 +167,11 @@ export default async function StudentAppCourse() {
                         Week {m.week}
                         {current && " · this week"}
                       </p>
-                      <p className="mt-1 truncate text-[15px] leading-tight text-ink">
+                      <p className="mt-1.5 truncate text-[15.5px] leading-snug text-ink">
                         {m.title}
                       </p>
                     </div>
-                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">
+                    <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-ink-faint">
                       {ahead && items.length === 0 ? (
                         <Lock className="h-3.5 w-3.5" />
                       ) : (
@@ -180,40 +180,44 @@ export default async function StudentAppCourse() {
                     </span>
                   </summary>
 
-                  <div className="border-t border-line px-4">
+                  <div className="border-t border-line px-5">
                     {items.length === 0 ? (
-                      <p className="py-4 text-[13px] text-ink-faint">
+                      <p className="py-5 text-[13.5px] text-ink-faint">
                         Lessons for this week aren&apos;t published yet.
                       </p>
                     ) : (
                       items.map((l) => {
-                        const complete = doneIds.has(l.id as string);
+                        const complete = doneIds.has(l.id);
                         return (
-                          <Link
-                            key={l.id as string}
+                          <Row
+                            key={l.id}
+                            label={l.title}
                             href={`/dashboard/course/${l.id}`}
+                            muted={complete}
+                            // The lesson player is a dynamic route with no
+                            // loading boundary, and a week can list a dozen
+                            // lessons — prefetching every visible one is a
+                            // dozen server renders thrown away by
+                            // staleTimes.dynamic = 0.
                             prefetch={false}
-                            className="press -mx-2 flex min-h-[52px] items-center gap-3 border-b border-line px-2 last:border-0 active:bg-wash"
-                          >
-                            {complete ? (
-                              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                            ) : (
-                              <Circle className="h-4 w-4 shrink-0 text-ink-faint" />
-                            )}
-                            <span
-                              className={`min-w-0 flex-1 truncate text-[14px] ${
-                                complete ? "text-ink-soft" : "text-ink"
-                              }`}
-                            >
-                              {l.title}
-                            </span>
-                            {!!l.duration_seconds && (
-                              <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">
-                                {Math.round((l.duration_seconds as number) / 60)}m
-                              </span>
-                            )}
-                            <PlayCircle className="h-4 w-4 shrink-0 text-ink-faint" />
-                          </Link>
+                            leading={
+                              complete ? (
+                                <CheckCircle2 className="h-[18px] w-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" />
+                              ) : (
+                                <Circle className="h-[18px] w-[18px] shrink-0 text-ink-faint" />
+                              )
+                            }
+                            right={
+                              <div className="flex shrink-0 items-center gap-2.5">
+                                {!!l.duration_seconds && (
+                                  <span className="font-mono text-[11.5px] tabular-nums text-ink-faint">
+                                    {Math.round(l.duration_seconds / 60)}m
+                                  </span>
+                                )}
+                                <PlayCircle className="h-[18px] w-[18px] text-ink-faint" />
+                              </div>
+                            }
+                          />
                         );
                       })
                     )}

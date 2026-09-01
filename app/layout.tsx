@@ -90,6 +90,28 @@ export const metadata: Metadata = {
     description:
       "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $130, free to apply, no equity taken.",
   },
+  // Google Search Console ownership. Set GOOGLE_SITE_VERIFICATION in the
+  // Vercel project env to the bare token Google gives you (not the whole meta
+  // tag) and this renders the verification tag on every page.
+  //
+  // Search Console is the only tool that answers "is Google actually indexing
+  // us" — analytics cannot, because a page that was never crawled sends no
+  // events. GA4 (below) reports on traffic that already arrived; this reports
+  // on whether the 135 guides are in the index at all, which is a different
+  // question and the one that matters while the brand has no search volume.
+  //
+  // Spread rather than set: an unset env var omits the key entirely instead of
+  // rendering an empty <meta content="">, which Google reads as a failed
+  // verification rather than an absent one.
+  //
+  // Salvaged from the abandoned seo/search-console branch, which could not be
+  // merged as-is — it was cut before GA4 and the auth flag landed, so merging
+  // it would have reverted both and reinstated a "no Google Analytics by
+  // choice" comment that main has since deliberately reversed. This block was
+  // the only part still worth keeping.
+  ...(process.env.GOOGLE_SITE_VERIFICATION
+    ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } }
+    : {}),
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "48x48" },

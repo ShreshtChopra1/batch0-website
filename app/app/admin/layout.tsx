@@ -3,6 +3,7 @@ import { requireViewer, roleHome } from "@/lib/auth";
 import { can, canAccessAdmin } from "@/lib/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AppShell } from "@/components/app/frame";
+import { AppPrefetch } from "@/components/app/prefetch";
 import type { Tab } from "@/components/app/tab-bar";
 
 /**
@@ -30,21 +31,35 @@ export default async function AdminAppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { profile, caps } = await requireViewer();
+  // The badge count starts NOW, not after the viewer resolves.
+  //
+  // It used to sit behind `await requireViewer()`, which made it a second
+  // serial cross-region round trip on every single admin screen — and the
+  // layout's await is exactly what the loading skeleton waits on. The count is
+  // keyed on nothing but "applications that are submitted", so it never needed
+  // the viewer at all; only the DECISION to show it does. Speculating costs one
+  // count query for a role that turns out not to hold applications.view, which
+  // is cheap and, since the number is discarded below before it reaches the
+  // client, discloses nothing.
+  const pendingPromise = createAdminClient()
+    .from("applications")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "submitted");
+
+  const [viewer, pendingRes] = await Promise.all([
+    requireViewer(),
+    pendingPromise,
+  ]);
+  const { profile, caps } = viewer;
   if (!canAccessAdmin(caps)) redirect(await roleHome(profile.role));
 
   const seeApplications = can(caps, "applications.view");
   const seePeople = can(caps, "people.view");
 
-  // The badge on Review. Fetched in the layout so it is correct on every screen
-  // rather than only on the one that happens to count applications — a stale
-  // "3 pending" on the People tab is worse than no badge at all.
-  const { count: pending } = seeApplications
-    ? await createAdminClient()
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "submitted")
-    : { count: null };
+  // The badge lives in the layout so it reads the same on every screen — a
+  // stale "3 pending" on the People tab is worse than no badge at all. Counts
+  // exactly what the Review screen queues (`submitted`), so the two agree.
+  const pending = seeApplications ? pendingRes.count : null;
 
   const tabs: Tab[] = [
     { href: "/app/admin", label: "Today", icon: "LayoutDashboard", exact: true },
@@ -62,5 +77,12 @@ export default async function AdminAppLayout({
     { href: "/app/admin/more", label: "More", icon: "MoreHorizontal" },
   ].filter(Boolean) as Tab[];
 
-  return <AppShell tabs={tabs}>{children}</AppShell>;
+  return (
+    <AppShell tabs={tabs}>
+      {children}
+      {/* Only the tabs this role can actually open — prefetching a route the
+          layout would bounce is a wasted render and a wasted request. */}
+      <AppPrefetch routes={tabs.map((t) => t.href)} />
+    </AppShell>
+  );
 }

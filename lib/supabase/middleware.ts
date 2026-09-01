@@ -395,14 +395,24 @@ export async function updateSession(request: NextRequest) {
     // Paths covered by the pending-fine hard-block below. Billing, pay-fine
     // and /auth stay exempt so a fined user can still reach the pay screen
     // and sign out.
+    // NOTE: /app is deliberately NOT here, and that is not a hole — the gate
+    // moved rather than disappeared. app/app/(student)/layout.tsx runs the same
+    // pending-fine check and sends a fined student to /dashboard/pay-fine.
+    //
+    // It moved because of where the cost lands. Middleware runs at the edge PoP
+    // nearest the visitor while Postgres sits in one region, so listing a path
+    // here buys it a full cross-region round trip (profiles + app_roles + the
+    // charge row) BEFORE the page starts rendering — on every navigation, and
+    // the app is four tabs people move between constantly. Run from the layout
+    // instead, the same check rides along in a parallel batch the page was
+    // already issuing from the regional function, and costs approximately
+    // nothing.
+    //
+    // With /app absent from every predicate here, `needsCaps` is false for it
+    // too, so an /app request now does zero database work in middleware.
     const finePath =
       (path.startsWith("/dashboard") ||
         path.startsWith("/apply") ||
-        // The app is behind the fine gate too. Leaving it out would have made
-        // the home-screen icon a way around a hard block that exists precisely
-        // because it cannot be walked around — the fined student would simply
-        // use the app instead of the site.
-        isAppPath(path) ||
         path.startsWith("/mentor") ||
         path.startsWith("/investor")) &&
       !path.startsWith("/dashboard/billing") &&

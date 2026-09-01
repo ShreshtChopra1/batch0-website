@@ -3,7 +3,7 @@ import { Search } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { StatusBadge } from "@/components/ui/card";
-import { AppHeader, AppBody, Empty } from "@/components/app/frame";
+import { AppHeader, AppBody, Empty, Row } from "@/components/app/frame";
 
 export const metadata = { title: "People · Admin" };
 export const dynamic = "force-dynamic";
@@ -68,7 +68,7 @@ export default async function AdminAppPeople({
       <AppHeader title="People" eyebrow={q ? `“${q}”` : "Students and staff"} />
       <AppBody>
         <form action="/app/admin/people" method="get" className="relative">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-ink-faint" />
           <input
             type="search"
             name="q"
@@ -77,11 +77,15 @@ export default async function AdminAppPeople({
             enterKeyHint="search"
             autoCapitalize="off"
             autoCorrect="off"
-            className="h-11 w-full rounded-xl border border-line bg-wash pl-10 pr-3.5 text-[15px] text-ink placeholder:text-ink-faint focus:border-phosphor focus:outline-none focus:ring-1 focus:ring-phosphor"
+            // 16px, not 15: iOS Safari auto-zooms the whole page when a focused
+            // input's text is under 16px, and the zoom does not undo itself on
+            // blur. globals.css sets text-size-adjust for the same reason, but
+            // that does not cover focus zoom — only the font size does.
+            className="h-12 w-full rounded-xl border border-line bg-wash pl-11 pr-4 text-[16px] text-ink placeholder:text-ink-faint focus:border-phosphor focus:outline-none focus:ring-1 focus:ring-phosphor"
           />
         </form>
 
-        <div className="mt-4">
+        <div className="mt-5">
           {(people ?? []).length === 0 ? (
             <Empty>{q ? "Nobody matches that." : "No people yet."}</Empty>
           ) : (
@@ -89,23 +93,21 @@ export default async function AdminAppPeople({
               {(people ?? []).map((p) => {
                 const status = statusByUser.get(p.id as string);
                 return (
-                  <Link
+                  <Row
                     key={p.id as string}
+                    label={(p.full_name as string) || "No name"}
+                    meta={`${p.email as string}${
+                      p.role !== "student" ? ` · ${p.role}` : ""
+                    }`}
                     href={`/app/admin/people/${p.id}`}
-                    prefetch={false}
-                    className="press -mx-2 flex min-h-[58px] items-center gap-3 border-b border-line px-2 last:border-0 active:bg-wash"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[15px] leading-tight text-ink">
-                        {(p.full_name as string) || "No name"}
-                      </p>
-                      <p className="mt-1 truncate font-mono text-[11px] text-ink-faint">
-                        {p.email as string}
-                        {p.role !== "student" ? ` · ${p.role}` : ""}
-                      </p>
-                    </div>
-                    {status && <StatusBadge status={status} />}
-                  </Link>
+                    right={
+                      status ? (
+                        <span className="shrink-0">
+                          <StatusBadge status={status} />
+                        </span>
+                      ) : undefined
+                    }
+                  />
                 );
               })}
             </div>

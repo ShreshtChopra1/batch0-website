@@ -1,9 +1,16 @@
 import { Video, MapPin } from "lucide-react";
 import { requireViewer } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getCohortEvents } from "@/lib/app-cache";
 import { LocalTime } from "@/components/ui/local-time";
-import { AppHeader, AppBody, Section, Empty } from "@/components/app/frame";
+import {
+  AppHeader,
+  AppBody,
+  Section,
+  Empty,
+  Row,
+  Alert,
+} from "@/components/app/frame";
 import type { Role } from "@/lib/types";
 
 export const metadata = { title: "Events · batch0" };
@@ -30,36 +37,44 @@ const TYPE_LABEL: Record<string, string> = {
 export default async function StudentAppEvents() {
   const { profile } = await requireViewer();
   const access = await getStudentAccess(profile.role as Role);
-  const admin = createAdminClient();
+
+  // ENROLLMENT GATE — must stay above any query.
+  //
+  // The app shell admits anyone with a live application (lib/app-eligibility.ts),
+  // which is deliberate: a waitlisted applicant should be able to open the app.
+  // But events are enrolled-only content, and every read here goes through
+  // createAdminClient(), which uses the service role and therefore BYPASSES the
+  // `events read` RLS policy that would otherwise have enforced this. RLS is not
+  // a backstop on this code path; this check is the only thing standing between
+  // an unpaid applicant and a cohort's live Zoom join links.
+  //
+  // /dashboard/events draws the same line with <LockedFeature>. A phone surface
+  // must never be more permissive than the page it mirrors.
+  //
+  // Staff resolve as enrolled (lib/access.ts), so previewing still works.
+  if (!access.enrolled) {
+    return (
+      <>
+        <AppHeader title="Events" eyebrow="Locked" />
+        <AppBody>
+          <Alert tone="info" title="Events unlock at enrollment.">
+            Office hours, workshops and demo day show up here once your seat is
+            paid for.
+          </Alert>
+        </AppBody>
+      </>
+    );
+  }
+
   const nowIso = new Date().toISOString();
 
-  // Cohort-scoped events plus the global ones, matching what /dashboard/events
-  // shows. A PostgREST builder is single-use, so each query builds its own
-  // rather than sharing one and having the second inherit the first's filters.
-  const scoped = () => {
-    const q = admin
-      .from("events")
-      .select(
-        "id, title, type, description, starts_at, location, zoom_url, recording_url",
-      )
-      .in("visibility", ["enrolled", "public"]);
-    return access.cohortId
-      ? q.or(`cohort_id.is.null,cohort_id.eq.${access.cohortId}`)
-      : q.is("cohort_id", null);
-  };
-
-  const [{ data: upcoming }, { data: past }] = await Promise.all([
-    scoped()
-      .gte("starts_at", nowIso)
-      .order("starts_at", { ascending: true })
-      .limit(20),
-    // Only the recent past, and only enough of it to find last week's
-    // recording — the archive is not a phone surface.
-    scoped()
-      .lt("starts_at", nowIso)
-      .order("starts_at", { ascending: false })
-      .limit(5),
-  ]);
+  // Cached (lib/app-cache.ts): the calendar is staff-authored and changes a few
+  // times a cohort, so it is shared across everyone in that cohort for a minute
+  // — and the prefetcher has usually warmed it before this screen is opened.
+  const { upcoming, past } = await getCohortEvents(
+    { cohortId: access.cohortId },
+    nowIso,
+  );
 
   return (
     <>
@@ -113,23 +128,16 @@ export default async function StudentAppEvents() {
               {(past ?? [])
                 .filter((e) => e.recording_url)
                 .map((e) => (
-                  <a
+                  <Row
                     key={e.id as string}
+                    label={e.title as string}
+                    meta={<LocalTime value={e.starts_at as string} mode="date" />}
                     href={e.recording_url as string}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="press -mx-2 flex min-h-[54px] items-center gap-3 border-b border-line px-2 last:border-0 active:bg-wash"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[14px] text-ink">
-                        {e.title as string}
-                      </p>
-                      <p className="mt-1 font-mono text-[11px] tabular-nums text-ink-faint">
-                        <LocalTime value={e.starts_at as string} mode="date" />
-                      </p>
-                    </div>
-                    <Video className="h-4 w-4 shrink-0 text-ink-faint" />
-                  </a>
+                    external
+                    right={
+                      <Video className="h-[18px] w-[18px] shrink-0 text-ink-faint" />
+                    }
+                  />
                 ))}
             </div>
           </Section>

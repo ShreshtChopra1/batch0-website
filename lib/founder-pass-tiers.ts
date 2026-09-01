@@ -22,6 +22,34 @@
 export type PassTierKey = "standard" | "founding" | "full_ride";
 
 /**
+ * How a pass was delivered — the `kind` column added by migration 0054.
+ *
+ *   "card"    — a 3D-printed card handed out at an event. Anonymous until
+ *               someone redeems it.
+ *   "virtual" — issued BY NAME to one person, by someone who decided they
+ *               belong in the room, and sent to their inbox.
+ *
+ * This lives here rather than being a private detail of lib/founder-pass.ts
+ * because it now changes what a pass is WORTH, not just how it travelled: a
+ * virtual pass auto-admits (see autoAdmits below). Same rule as the tiers
+ * themselves — a delivery channel that changes mechanics has to be readable by
+ * the code that renders the promise.
+ */
+export type PassKind = "card" | "virtual";
+
+/**
+ * Resolve a stored kind, defaulting to "card".
+ *
+ * "card" is the right floor for the same reason migration 0054 backfilled it:
+ * every row that predates the column WAS printed. It is also the conservative
+ * default — a pass that reads as a card grants less, never more, so an
+ * unrecognised value can't hand out an auto-admit by accident.
+ */
+export function passKind(value: string | null | undefined): PassKind {
+  return value === "virtual" ? "virtual" : "card";
+}
+
+/**
  * How a tier treats the applications gate.
  *
  *   "window" — the historical behaviour: this pass opens the gate only while
@@ -174,15 +202,49 @@ export function discountLabel(tier: PassTier): string {
 export type PassGrant = {
   tier: PassTier;
   discountCents: number | null;
+  /**
+   * How this pass was delivered. Carried on the grant — not left behind in
+   * lib/founder-pass.ts — because a virtual pass auto-admits, so every surface
+   * that reasons about what someone was given has to be able to see it. See
+   * grantAutoAdmits().
+   */
+  kind: PassKind;
 };
 
 /** A grant carrying nothing but its tier's own terms. */
 export function grantOf(
   tier: PassTier,
   discountCents: number | null = null,
+  kind: PassKind = "card",
 ): PassGrant {
-  return { tier, discountCents: normalizeDiscountCents(discountCents) };
+  return {
+    tier,
+    discountCents: normalizeDiscountCents(discountCents),
+    kind: passKind(kind),
+  };
 }
+
+/**
+ * Whether this pass admits its holder outright.
+ *
+ * TRUE FOR EVERY VIRTUAL PASS, at every tier, deliberately — it is a property
+ * of how the pass was issued, not of which package it names. A printed card is
+ * pulled off a stack by a stranger at an event; a virtual pass is minted for
+ * one named person by an admin who already decided they belong in the room. So
+ * making that person write an application and then wait for a reviewer to
+ * agree with the admin who invited them is theatre: the decision was made when
+ * the pass was sent.
+ *
+ * A card, which anyone holding the plastic can redeem, must never do this —
+ * that would turn a lost card into an admission.
+ */
+export function grantAutoAdmits(grant: PassGrant): boolean {
+  return grant.kind === "virtual";
+}
+
+/** The single sentence every surface uses to describe the auto-admit perk. */
+export const AUTO_ADMIT_LINE =
+  "A seat, not a maybe: submit your application and you're admitted on the spot — no review queue, no wait.";
 
 /**
  * Coerce an override into something safe to store: a non-negative whole number
@@ -273,10 +335,17 @@ export function grantPerkLines(grant: PassGrant): string[] {
     );
   }
 
+  // Auto-admit REPLACES the decision-target line rather than sitting next to
+  // it. "You're admitted on submit" and "we aim to decide within 2 business
+  // days" are two different promises about the same moment, and printing both
+  // in one invite reads as a contradiction — or worse, as a wait that isn't
+  // real. A pass that admits outright has no decision target to quote.
   lines.push(
-    tier.decisionTargetDays === 1
-      ? "Read first, with a decision the next business day after a complete application."
-      : `Read first, with a decision inside ${tier.decisionTargetDays} business days of a complete application.`,
+    grantAutoAdmits(grant)
+      ? AUTO_ADMIT_LINE
+      : tier.decisionTargetDays === 1
+        ? "Read first, with a decision the next business day after a complete application."
+        : `Read first, with a decision inside ${tier.decisionTargetDays} business days of a complete application.`,
   );
   lines.push(
     tier.feedbackCredits === 1

@@ -18,6 +18,7 @@ import {
   Users,
   Search,
   BadgeCheck,
+  ExternalLink,
 } from "lucide-react";
 import {
   revokePassAction,
@@ -32,9 +33,11 @@ import { parseEmailList } from "./shared";
 import {
   PASS_TIERS,
   DEFAULT_TIER,
+  formatCents,
   grantOf,
   grantPerkLines,
   parseDollarsToCents,
+  passKind,
   passTier,
   type PassTierKey,
 } from "@/lib/founder-pass-tiers";
@@ -53,6 +56,13 @@ export type PassRow = {
   recipientName: string | null;
   /** The perks baked in at issue time (migration 0055). */
   tier: PassTierKey;
+  /**
+   * The hand-set discount override in cents, or null for "use the tier"
+   * (migration 0056). In the ledger because it is money off someone's tuition
+   * that exists nowhere else a human can read: the send screen showed it once
+   * and is gone on refresh.
+   */
+  discountCents: number | null;
 };
 
 export type BatchSummary = {
@@ -118,6 +128,7 @@ export function PassesPanel({
   nextVirtualBatch,
   canMint,
   canEmail,
+  emailDetail,
   contactEmail,
 }: {
   rows: PassRow[];
@@ -127,6 +138,13 @@ export function PassesPanel({
   nextVirtualBatch: string;
   canMint: boolean;
   canEmail: boolean;
+  /**
+   * What the mail transport says about itself — quoted verbatim when sending
+   * is off. "RESEND_API_KEY isn't set" is the wrong answer on a site that
+   * sends over SMTP, and an admin acting on it would go and set a key that
+   * changes nothing.
+   */
+  emailDetail: string;
   /** The house inbox, offered as a one-click recipient. */
   contactEmail: string;
 }) {
@@ -245,7 +263,7 @@ export function PassesPanel({
    * whether or not the pass is ever claimed.
    */
   async function send() {
-    const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars));
+    const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars), "virtual");
     const total = recipientCount * sendCount;
     const heavy =
       total >= 5 ||
@@ -322,7 +340,7 @@ export function PassesPanel({
       row.tier === DEFAULT_TIER.key
         ? ""
         : `\n\nThis is a ${passTier(row.tier).label.toLowerCase()} pass: ${grantPerkLines(
-            grantOf(passTier(row.tier)),
+            grantOf(passTier(row.tier), null, passKind(row.kind)),
           )
             .join(" ")
             .toLowerCase()}`;
@@ -361,7 +379,7 @@ export function PassesPanel({
   const totalPasses = recipientCount * sendCount;
   const sendReady = recipientCount > 0;
 
-  const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars));
+  const grant = grantOf(passTier(tierKey), parseDollarsToCents(discountDollars), "virtual");
   // A typed value that parses to nothing is a typo, not "use the tier" — the
   // server would silently fall back, so say so before they click.
   const discountUnparsed =
@@ -862,10 +880,9 @@ export function PassesPanel({
 
         {!canEmail && (
           <p className="mt-4 rounded-lg border border-amber-400/40 bg-amber-400/[0.06] px-3 py-2 text-xs text-amber-200">
-            This environment can&apos;t send — RESEND_API_KEY or
-            FOUNDER_PASS_PEPPER aren&apos;t set here. Nothing would leave the
-            building, so the button stays off rather than issuing serials that
-            get revoked a second later.
+            This environment can&apos;t send: {emailDetail} Nothing would leave
+            the building, so the button stays off rather than issuing serials
+            that get revoked a second later.
           </p>
         )}
 
@@ -908,6 +925,20 @@ export function PassesPanel({
                     {p.name ? `${p.name} · ` : ""}
                     {p.email}
                   </span>
+                  {/* The same link the email's button carries. Delivery and
+                      redemption fail separately, so being able to open the
+                      holder flow without waiting on a mail server is the
+                      difference between "did that work?" and knowing. */}
+                  <a
+                    href={p.redeemUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Open the redeem link for pass #${p.serial}`}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink hover:border-ink/30 hover:bg-wash"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open
+                  </a>
                   <CopyButton
                     value={p.code.toUpperCase()}
                     label={`Copy the code for pass #${p.serial}`}
@@ -919,9 +950,12 @@ export function PassesPanel({
               <div className="mt-3 flex justify-end">
                 <CopyButton
                   value={
-                    "serial,code,email\n" +
+                    "serial,code,email,redeem_url\n" +
                     issued
-                      .map((p) => `#${p.serial},${p.code.toUpperCase()},${p.email}`)
+                      .map(
+                        (p) =>
+                          `#${p.serial},${p.code.toUpperCase()},${p.email},${p.redeemUrl}`,
+                      )
                       .join("\n")
                   }
                   label="Copy every code from this send"
@@ -1015,6 +1049,19 @@ export function PassesPanel({
                     >
                       <Sparkles className="h-3 w-3" />
                       {passTier(r.tier).label}
+                    </span>
+                  )}
+                  {/* A hand-set discount always shows, including $0 — that is a
+                      real choice ("for the lane and the tools"), and it is the
+                      one term on a pass that no tier name reveals. */}
+                  {r.discountCents !== null && (
+                    <span
+                      title="A hand-set discount on this pass, overriding its tier"
+                      className="inline-flex shrink-0 items-center rounded-md border border-line px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-soft"
+                    >
+                      {r.discountCents === 0
+                        ? "No discount"
+                        : `${formatCents(r.discountCents)} off`}
                     </span>
                   )}
                   <span className="font-mono text-[11px] text-ink-faint">{r.batch}</span>

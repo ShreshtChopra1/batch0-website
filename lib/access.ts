@@ -234,6 +234,41 @@ export const getStudentAccess = cache(async function getStudentAccess(
 });
 
 /**
+ * Does the signed-in user owe an unpaid fine?
+ *
+ * The same predicate middleware applies to /dashboard, /apply, /mentor and
+ * /investor — but callable from a server component, so the installed app can
+ * enforce it from its layout instead of buying an edge-to-region round trip in
+ * middleware on every navigation. See the note in lib/supabase/middleware.ts.
+ *
+ * Request-cached: the layout and anything else that asks in the same render
+ * share one read.
+ *
+ * Fails CLOSED on a query error — an unreadable charges table must not become a
+ * way to use the product for free. The cost of being wrong here is one person
+ * seeing a pay screen they could dismiss by reloading; the cost the other way is
+ * the fine gate quietly not existing.
+ */
+export const hasPendingFine = cache(async function hasPendingFine(): Promise<boolean> {
+  const user = await getUser();
+  if (!user) return false;
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("user_charges")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("kind", "fine")
+    .eq("status", "pending")
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("[access] pending-fine check failed:", error.message);
+    return true;
+  }
+  return !!data;
+});
+
+/**
  * Whether this viewer may use the installed app at /app.
  *
  * A pure function on an already-resolved StudentAccess, like aiAccessFrom

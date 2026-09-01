@@ -7,8 +7,10 @@ import {
   getStudentAccess,
   installedAppAccessFrom,
   loadAccessRows,
+  hasPendingFine,
 } from "@/lib/access";
 import { AppShell, ActionLink } from "@/components/app/frame";
+import { AppPrefetch } from "@/components/app/prefetch";
 import type { Tab } from "@/components/app/tab-bar";
 import type { Role } from "@/lib/types";
 
@@ -34,6 +36,18 @@ const STUDENT_TABS: Tab[] = [
   { href: "/app/more", label: "More", icon: "MoreHorizontal" },
 ];
 
+// Every tab plus the two full screens that hang off More. Defined at module
+// scope so its identity is stable and the prefetcher does not re-run on every
+// render of the layout.
+const PREFETCH_ROUTES = [
+  "/app/home",
+  "/app/course",
+  "/app/checkin",
+  "/app/more",
+  "/app/announcements",
+  "/app/events",
+];
+
 export default async function StudentAppLayout({
   children,
 }: {
@@ -48,7 +62,11 @@ export default async function StudentAppLayout({
   // This matters more here than on /dashboard: the layout's await is what the
   // loading boundary waits on, so every round trip spent here is time the
   // skeleton stays on screen. Same pattern as app/dashboard/layout.tsx.
-  const [viewer] = await Promise.all([requireViewer(), loadAccessRows()]);
+  const [viewer, , pendingFine] = await Promise.all([
+    requireViewer(),
+    loadAccessRows(),
+    hasPendingFine(),
+  ]);
   const { profile, caps } = viewer;
 
   // Same gate as /dashboard: the participant area is `student.dashboard`.
@@ -56,6 +74,20 @@ export default async function StudentAppLayout({
   // link in /app/admin/more work.
   if (!can(caps, "student.dashboard")) {
     redirect(await roleHome(profile.role));
+  }
+
+  // The pending-fine hard block, which used to live in middleware for /app.
+  //
+  // Moving it here is what let middleware stop doing database work on /app
+  // entirely: at the edge this check cost a cross-region round trip before the
+  // page could start, on every single tab tap. Here it rides in the batch
+  // above and costs nothing measurable — same rule, same destination, a
+  // fraction of the latency.
+  //
+  // Full admins bypass, matching middleware, so they can still reach /admin to
+  // waive the fine they are looking at.
+  if (pendingFine && !caps.superAdmin) {
+    redirect("/dashboard/pay-fine");
   }
 
   // The app is for people who are actually in the program — enrolled, or with a
@@ -74,7 +106,14 @@ export default async function StudentAppLayout({
     return <NotInTheProgram status={access.applicationStatus} />;
   }
 
-  return <AppShell tabs={STUDENT_TABS}>{children}</AppShell>;
+  return (
+    <AppShell tabs={STUDENT_TABS}>
+      {children}
+      {/* Warms the other three tabs so tapping one is instant. See the
+          component for why this is imperative rather than left to <Link>. */}
+      <AppPrefetch routes={PREFETCH_ROUTES} />
+    </AppShell>
+  );
 }
 
 /**
