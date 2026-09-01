@@ -83,6 +83,23 @@ export function resetTransportCache() {
   cachedSmtp = null;
 }
 
+/**
+ * Resend tags ride along on the send and come back on every webhook event for
+ * it, which is the only way to attribute an open to the template that earned
+ * it. Before this, /admin/email grouped by a normalized subject line and split
+ * one template into a row per personalization.
+ *
+ * Tag names and values are restricted to ASCII letters, digits, underscore and
+ * dash — our keys look like "application.accepted", so the dots have to go or
+ * Resend rejects the whole send. A metrics label is never worth failing an
+ * email over, hence the sanitize-and-truncate rather than a validation error.
+ */
+function resendTags(templateKey?: string) {
+  if (!templateKey) return undefined;
+  const value = templateKey.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 256);
+  return value ? [{ name: "template", value }] : undefined;
+}
+
 export type TransportStatus =
   | { ok: true; transport: "resend" | "smtp"; detail: string }
   | { ok: false; transport: "resend" | "smtp"; detail: string };
@@ -175,6 +192,7 @@ export async function sendEmail(args: EmailArgs): Promise<EmailResult> {
       text: args.text,
       replyTo,
       headers: args.templateKey ? { "X-Batch0-Template": args.templateKey } : undefined,
+      tags: resendTags(args.templateKey),
     });
     if (error) {
       console.error("[email] resend send failed", error);
@@ -273,6 +291,13 @@ export async function sendEmailBatch(
           html: i.html,
           text: i.text,
           replyTo,
+          // Batch sends were dropping the template label the single-send path
+          // has always set, so a blast — the highest-volume thing this app
+          // does — arrived at the metrics page unattributed.
+          headers: i.templateKey
+            ? { "X-Batch0-Template": i.templateKey }
+            : undefined,
+          tags: resendTags(i.templateKey),
         })),
       );
       if (error) throw new Error(error.message);
@@ -288,6 +313,7 @@ export async function sendEmailBatch(
           subject: i.subject,
           html: i.html,
           text: i.text,
+          templateKey: i.templateKey,
         });
         results.push({ to: i.to, ok: r.ok, id: r.id, reason: r.reason });
       }
