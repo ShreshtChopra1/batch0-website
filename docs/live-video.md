@@ -4,16 +4,18 @@ Working plan for `feat/live-video-webinars-and-1on1`.
 
 ## Status
 
-Built and merged into the branch. **Two migrations still need running by hand**
+Built and merged into the branch. **Three migrations still need running by hand**
 before any of it works — this repo applies migrations through the Supabase SQL
 Editor (see SETUP.md), so nothing has touched the database yet:
 
 1. `supabase/migrations/0057_hosted_events.sql`
 2. `supabase/migrations/0058_call_invites.sql`
+3. `supabase/migrations/0059_webinar_questions.sql`
 
-Run them in that order. Both are idempotent and safe to re-run. Until they are
-applied, `/admin/events` will fail to save a hosted event and `/dashboard/calls`
-will error, because the columns and table they read do not exist yet.
+Run them in that order. All three are idempotent and safe to re-run. Until they
+are applied, `/admin/events` will fail to save a hosted event, `/dashboard/calls`
+will error, and the webinar Q&A panel will fail to load or post questions,
+because the columns and tables they read do not exist yet.
 
 Verify the provider side any time with:
 
@@ -276,6 +278,31 @@ itself.
 Recommendation: ship layers 1–3, which defeat every non-technical student and
 all identity disclosure. Revisit HLS only if the exact headcount leaking to
 someone determined enough to open devtools is genuinely unacceptable.
+
+**Questions go through server-backed Q&A, not Daily chat (shipped).** Hiding the
+audience broke the assumption above that viewers ask questions in Daily's chat.
+Daily Prebuilt only lets a hidden participant (`hasPresence: false`) *read* chat,
+not send it — so a hidden webinar audience cannot ask a question through Daily
+without being un-hidden, which would defeat layer 3. Rather than trade the
+privacy guarantee for a chat box, questions now go through our own store:
+
+- A new table, `public.webinar_questions` (migration `0059`), holds one row per
+  question with the asker's id and the event id.
+- Server actions in `app/dashboard/events/[id]/live/actions.ts` post and fetch
+  questions.
+- A panel, `components/live/qa-panel.tsx`, renders beside the Daily iframe and
+  drives those actions, so Q&A lives in our UI instead of the provider's.
+
+Room-level chat is now shaped by mode in `createRoom` (`lib/daily.ts`):
+`enable_chat` is `false` for webinars (`mode === "webinar"`) and `true` for 1:1
+meetings, where a hidden audience is not in play and Daily's own chat is fine.
+
+The privacy property from layers 1–3 is preserved end to end. A viewer's
+`fetchQuestions` returns only their *own* questions; the host (`events.manage`)
+sees all of them. That is the same asymmetry as the roster — a student learns
+nothing about who else is in the room, including who else is asking. RLS in
+`0059` backstops the server actions so the split is enforced at the database, not
+only in the action code.
 
 ### 4d. 1:1 calls
 

@@ -5,6 +5,8 @@ import {
   canSeeRoster,
   joinState,
   inviteEndsAt,
+  normalizeQuestion,
+  MAX_QUESTION_LENGTH,
   JOIN_OPENS_MINUTES_BEFORE,
   JOIN_CLOSES_MINUTES_AFTER,
   DEFAULT_EVENT_MINUTES,
@@ -137,4 +139,35 @@ test("an invite ends its duration after it starts", () => {
   } satisfies CallInvite;
 
   assert.equal(inviteEndsAt(invite), at(45).toISOString());
+});
+
+// ---------------------------------------------------------------------------
+// Webinar Q&A
+// ---------------------------------------------------------------------------
+//
+// normalizeQuestion is the shared truth the client button and the server
+// action both read, so both the "reject" and "accept" branches matter.
+
+test("a blank or whitespace-only question is rejected", () => {
+  assert.equal(normalizeQuestion(""), null);
+  assert.equal(normalizeQuestion("   "), null);
+  assert.equal(normalizeQuestion("\n\n\t  \n"), null);
+});
+
+test("a real question is trimmed and kept", () => {
+  assert.equal(normalizeQuestion("  How do I pitch?  "), "How do I pitch?");
+});
+
+test("runs of whitespace collapse to a single space", () => {
+  // A wall of newlines can't be used to pad out the host's panel.
+  assert.equal(
+    normalizeQuestion("How   do\n\n\nI   pitch?"),
+    "How do I pitch?",
+  );
+});
+
+test("an over-long question is capped at the DB limit", () => {
+  const long = "a".repeat(MAX_QUESTION_LENGTH + 50);
+  const out = normalizeQuestion(long);
+  assert.equal(out?.length, MAX_QUESTION_LENGTH);
 });

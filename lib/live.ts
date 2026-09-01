@@ -94,6 +94,54 @@ export type CallInvite = {
 } & LiveRoom;
 
 // ---------------------------------------------------------------------------
+// Webinar Q&A
+// ---------------------------------------------------------------------------
+
+/**
+ * A question a viewer asked during a hosted webinar (`webinar_questions`,
+ * migration 0059).
+ *
+ * Questions live in our database, not in the video room's chat. A hidden
+ * viewer (`hasPresence: false`) can read Daily's Prebuilt chat but not send to
+ * it, so letting students ask through the room would mean un-hiding the
+ * audience — the exact thing webinar mode exists to prevent. Routing questions
+ * through here keeps the audience hidden and the questions ours: persisted,
+ * moderatable, and scoped so a viewer only ever sees their own.
+ */
+export type QuestionStatus = "open" | "answered" | "dismissed";
+
+export type WebinarQuestion = {
+  id: string;
+  eventId: string;
+  askerId: string;
+  /** Resolved server-side; a viewer never learns another viewer's name here. */
+  askerName: string;
+  body: string;
+  status: QuestionStatus;
+  createdAt: string;
+};
+
+/** Longest question we accept, matched by the DB check in migration 0059. */
+export const MAX_QUESTION_LENGTH = 500;
+
+/**
+ * Clean up a submitted question, or reject it.
+ *
+ * Trims, collapses runs of whitespace (so a wall of newlines can't pad the
+ * host's panel), and caps the length. Returns null for anything empty, which
+ * the caller treats as "don't submit" rather than writing a blank row.
+ *
+ * Pure and exported so both the client (to disable the button) and the server
+ * action (the actual gate) agree on what counts as a question, and so the
+ * rule is unit-tested rather than implied.
+ */
+export function normalizeQuestion(input: string): string | null {
+  const cleaned = input.replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  return cleaned.slice(0, MAX_QUESTION_LENGTH);
+}
+
+// ---------------------------------------------------------------------------
 // Join window
 // ---------------------------------------------------------------------------
 

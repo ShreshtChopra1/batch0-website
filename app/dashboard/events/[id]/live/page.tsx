@@ -5,6 +5,10 @@ import { requireUser, getProfile, getCapabilities } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { dailyConfigured, mintToken } from "@/lib/daily";
 import { canJoin, joinState, DEFAULT_EVENT_MINUTES, type LiveRole } from "@/lib/live";
+import {
+  listQuestionsForEvent,
+  listQuestionsForAsker,
+} from "@/lib/webinar-questions";
 import { LiveRoom } from "./live-room";
 import { Card } from "@/components/ui/card";
 import { LocalTime } from "@/components/ui/local-time";
@@ -109,6 +113,17 @@ export default async function EventLivePage({
     expiresAt: new Date(end.getTime() + 60 * 60 * 1000),
   });
 
+  // Seed the Q&A panel. The host sees the whole queue; a viewer sees only their
+  // own questions — the same split the panel's polling keeps to, so the first
+  // paint already respects the audience-privacy rule rather than briefly
+  // showing more than it should.
+  const initialQuestions =
+    role === "host"
+      ? await listQuestionsForEvent(ev.id)
+      : profile
+        ? await listQuestionsForAsker(ev.id, profile.id)
+        : [];
+
   return (
     <LiveRoom
       title={ev.title}
@@ -116,6 +131,7 @@ export default async function EventLivePage({
       token={token}
       role={role}
       backHref="/dashboard/events"
+      qa={{ eventId: ev.id, initialQuestions }}
     />
   );
 }

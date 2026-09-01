@@ -5,8 +5,9 @@ import type DailyIframe from "@daily-co/daily-js";
 import type { DailyCall } from "@daily-co/daily-js";
 import { PreJoin } from "@/components/live/pre-join";
 import { LiveDot } from "@/components/live/call-stage";
+import { QAPanel } from "@/components/live/qa-panel";
 import { Button, ButtonLink } from "@/components/ui/button";
-import { canSeeRoster, type LiveRole } from "@/lib/live";
+import { canSeeRoster, type LiveRole, type WebinarQuestion } from "@/lib/live";
 import { AlertTriangle } from "lucide-react";
 
 type Phase = "prejoin" | "joining" | "joined" | "left" | "error";
@@ -30,12 +31,18 @@ export function LiveRoom({
   token,
   role,
   backHref,
+  qa,
 }: {
   title: string;
   roomUrl: string;
   token: string;
   role: LiveRole;
   backHref: string;
+  // Present for webinars, absent for 1:1 calls. When set, the room is a
+  // hosted webinar: the audience is hidden, Daily's chat is off, and questions
+  // flow through our own Q&A panel instead. A 1:1 has no audience to hide and
+  // keeps Daily's built-in chat, so it passes no `qa`.
+  qa?: { eventId: string; initialQuestions: WebinarQuestion[] };
 }) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -150,7 +157,7 @@ export function LiveRoom({
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className={qa ? "mx-auto max-w-6xl" : "mx-auto max-w-5xl"}>
       {/*
         The container is mounted at all times, not conditionally. Daily needs a
         real element to attach to at the moment createFrame runs, and mounting
@@ -164,10 +171,26 @@ export function LiveRoom({
           </h1>
           {phase === "joined" && <LiveDot />}
         </header>
-        <div
-          ref={containerRef}
-          className="h-[70vh] min-h-[420px] w-full overflow-hidden rounded-xl border border-line bg-ink-900"
-        />
+        {/*
+          Webinar: video and the Q&A panel side by side on desktop, stacked on
+          mobile. 1:1: video only, full width. The container itself is the same
+          element in both — only what sits next to it changes.
+        */}
+        <div className="flex flex-col gap-3 lg:flex-row">
+          <div
+            ref={containerRef}
+            className="h-[60vh] min-h-[360px] w-full flex-1 overflow-hidden rounded-xl border border-line bg-ink-900 lg:h-[70vh]"
+          />
+          {qa && phase !== "prejoin" && (
+            <div className="h-[60vh] min-h-[360px] w-full shrink-0 lg:h-[70vh] lg:w-80">
+              <QAPanel
+                eventId={qa.eventId}
+                role={role}
+                initialQuestions={qa.initialQuestions}
+              />
+            </div>
+          )}
+        </div>
         {phase === "joining" && (
           <p className="mt-3 text-center text-xs text-ink-faint">Connecting…</p>
         )}

@@ -146,7 +146,12 @@ export async function createRoom({
         // the other half.
         owner_only_broadcast: mode === "webinar",
         enable_screenshare: true,
-        enable_chat: true,
+        // 1:1s use Daily's built-in chat. Webinars do NOT: a webinar viewer
+        // joins hidden (hasPresence:false) and Prebuilt only lets a hidden
+        // participant *read* chat, not send — so leaving it on would show
+        // students a chat they can't post to. Their questions go through our
+        // own Q&A instead (webinar_questions, 0059), which keeps them hidden.
+        enable_chat: mode === "meeting",
         enable_prejoin_ui: false, // we ship our own green room (PreJoin)
         enable_recording: enableRecording ? "cloud" : undefined,
         // Above 50 participants Daily requires this, and it is required for
