@@ -31,6 +31,7 @@ import {
   Flag,
   KeyRound,
   Calendar as CalendarIcon,
+  Video,
   Workflow,
   LineChart,
 } from "lucide-react";
@@ -86,6 +87,7 @@ export const STUDENT_NAV_GROUPS: NavGroup[] = [
         label: "Office hours",
         icon: CalendarIcon,
       },
+      { href: "/dashboard/calls", label: "1:1 calls", icon: Video },
       { href: "/dashboard/events", label: "Events", icon: CalendarDays },
       { href: "/dashboard/resources", label: "Resources", icon: FolderArchive },
     ],
@@ -266,6 +268,12 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
         label: "Events",
         icon: CalendarDays,
         perm: "events.manage",
+      },
+      {
+        href: "/admin/calls",
+        label: "1:1 calls",
+        icon: Video,
+        perm: "calls.invite",
       },
       {
         href: "/admin/resources",
@@ -457,6 +465,7 @@ export const MENTOR_NAV_GROUPS: NavGroup[] = [
         label: "Office hours",
         icon: CalendarIcon,
       },
+      { href: "/mentor/calls", label: "1:1 calls", icon: Video },
       { href: "/mentor/course", label: "Course", icon: BookOpen },
     ],
   },
@@ -493,6 +502,7 @@ export const INVESTOR_NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/investor/interests", label: "My interests", icon: Star },
       { href: "/investor/intros", label: "Intros", icon: Handshake },
+      { href: "/investor/calls", label: "1:1 calls", icon: Video },
     ],
   },
 ];

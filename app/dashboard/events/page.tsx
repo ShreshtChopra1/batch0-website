@@ -1,11 +1,38 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireUser, getProfile } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
-import { CalendarDays, MapPin, Video } from "lucide-react";
 import { getStudentAccess } from "@/lib/access";
 import { LockedFeature } from "@/components/dashboard/locked-feature";
+import { EventCard } from "@/components/live/event-card";
+import type { LiveEvent } from "@/lib/live";
 
 export const metadata = { title: "Events · batch0" };
+
+/**
+ * DB row -> the shape EventCard renders.
+ *
+ * Kept explicit rather than passing the row through, so a column rename shows
+ * up as a type error here instead of an empty card in front of a student.
+ */
+function toLiveEvent(e: any): LiveEvent {
+  return {
+    id: e.id,
+    title: e.title,
+    description: e.description,
+    type: e.type,
+    startsAt: e.starts_at,
+    endsAt: e.ends_at,
+    location: e.location,
+    // Rows written before migration 0057 have no live_mode; they are all
+    // external by definition, so default rather than render them broken.
+    liveMode: e.live_mode === "hosted" ? "hosted" : "external",
+    externalUrl: e.zoom_url,
+    recordingUrl: e.recording_url,
+    hostName: null,
+    roomName: e.daily_room_name ?? null,
+    roomUrl: e.daily_room_url ?? null,
+  };
+}
 
 export default async function StudentEventsPage() {
   await requireUser();
@@ -54,7 +81,7 @@ export default async function StudentEventsPage() {
         ) : (
           <div className="space-y-3">
             {(upcoming ?? []).map((e: any) => (
-              <EventCard key={e.id} event={e} upcoming />
+              <EventCard key={e.id} event={toLiveEvent(e)} upcoming />
             ))}
           </div>
         )}
@@ -67,83 +94,11 @@ export default async function StudentEventsPage() {
           </h2>
           <div className="space-y-3">
             {(past ?? []).map((e: any) => (
-              <EventCard key={e.id} event={e} upcoming={false} />
+              <EventCard key={e.id} event={toLiveEvent(e)} upcoming={false} />
             ))}
           </div>
         </section>
       )}
     </div>
-  );
-}
-
-function EventCard({ event, upcoming }: { event: any; upcoming: boolean }) {
-  const startsAt = new Date(event.starts_at);
-  return (
-    <Card>
-      <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg bg-phosphor/10 text-phosphor-ink">
-          <span className="text-[10px] font-bold uppercase">
-            {startsAt.toLocaleString("en-US", { month: "short" })}
-          </span>
-          <span className="text-base font-bold leading-none">
-            {startsAt.getDate()}
-          </span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-2">
-            <h3 className="text-base font-semibold text-ink">
-              {event.title}
-            </h3>
-            <span className="text-[10px] uppercase tracking-wider text-phosphor-ink/80">
-              {event.type.replace("_", " ")}
-            </span>
-          </div>
-          {event.description && (
-            <p className="mt-1 text-sm text-ink-soft">{event.description}</p>
-          )}
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-faint">
-            <span className="inline-flex items-center gap-1">
-              <CalendarDays className="h-3.5 w-3.5" />
-              {startsAt.toLocaleString()}
-            </span>
-            {event.location && (
-              <span className="inline-flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" />
-                {event.location}
-              </span>
-            )}
-            {event.zoom_url && upcoming && (
-              <a
-                href={event.zoom_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-phosphor-ink hover:underline"
-              >
-                <Video className="h-3.5 w-3.5" />
-                Join Zoom
-              </a>
-            )}
-            {event.recording_url && !upcoming && (
-              <a
-                href={event.recording_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-phosphor-ink hover:underline"
-              >
-                Watch recording →
-              </a>
-            )}
-            {upcoming && (
-              <a
-                href={`/api/events/${event.id}/ics`}
-                className="text-ink-faint hover:text-ink"
-              >
-                Add to calendar
-              </a>
-            )}
-          </div>
-        </div>
-      </div>
-    </Card>
   );
 }

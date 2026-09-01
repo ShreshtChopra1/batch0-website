@@ -71,6 +71,7 @@ export const PERMISSION_KEYS = [
   "mentor.panel",
   "investor.panel",
   "student.dashboard",
+  "calls.invite",
 ] as const;
 
 export type Permission = (typeof PERMISSION_KEYS)[number];
@@ -342,6 +343,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         description:
           "Access /dashboard as a participant. Grant this to roles that also take part in the programme.",
       },
+      {
+        key: "calls.invite",
+        label: "Invite students to 1:1 calls",
+        description:
+          "Propose a private video call to any student, who can accept or decline. Held by mentors and investors.",
+        sensitive: true,
+      },
     ],
   },
 ];
@@ -380,6 +388,13 @@ const NON_ADMIN_PERMISSIONS = new Set<string>([
   "mentor.panel",
   "investor.panel",
   "student.dashboard",
+  // MUST stay in this list. `canAccessAdmin` is "holds any admin-area
+  // permission", and admin-area is derived by subtracting this set from the
+  // catalog — so a permission omitted here silently becomes a key to /admin.
+  // calls.invite is granted to mentors and investors by migration 0058;
+  // leaving it out would have handed both roles the entire admin panel as a
+  // side effect of letting them book a call.
+  "calls.invite",
 ]);
 
 /** Every permission that implies "this person belongs in /admin". */
@@ -494,6 +509,7 @@ export const ADMIN_ROUTE_PERMISSIONS: ReadonlyArray<readonly [string, Permission
   ["/admin/teams", "teams.manage"],
   ["/admin/demo-day", "demoday.manage"],
   ["/admin/intros", "intros.manage"],
+  ["/admin/calls", "calls.invite"],
   ["/admin/blog", "blog.manage"],
   ["/admin/course", "course.manage"],
   ["/admin/events", "events.manage"],

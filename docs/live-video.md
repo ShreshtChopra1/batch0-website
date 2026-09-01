@@ -2,6 +2,30 @@
 
 Working plan for `feat/live-video-webinars-and-1on1`.
 
+## Status
+
+Built and merged into the branch. **Two migrations still need running by hand**
+before any of it works — this repo applies migrations through the Supabase SQL
+Editor (see SETUP.md), so nothing has touched the database yet:
+
+1. `supabase/migrations/0057_hosted_events.sql`
+2. `supabase/migrations/0058_call_invites.sql`
+
+Run them in that order. Both are idempotent and safe to re-run. Until they are
+applied, `/admin/events` will fail to save a hosted event and `/dashboard/calls`
+will error, because the columns and table they read do not exist yet.
+
+Verify the provider side any time with:
+
+```
+npm run daily-doctor
+```
+
+which creates a private room, mints a host and a viewer token, asserts the two
+differ in the ways that matter (`is_owner`, `hasPresence`, recording rights),
+and deletes the room. `--keep` leaves it up and prints two join URLs so you can
+open them in separate browsers and see the split for real.
+
 Two features, one shared primitive:
 
 1. **Webinars** — admin broadcasts with camera/mic/screen; students watch and ask

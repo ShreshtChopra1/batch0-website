@@ -1,0 +1,160 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { requireUser, getProfile } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getInvite } from "@/lib/calls";
+import { createRoom, dailyConfigured, mintToken } from "@/lib/daily";
+import { canJoin, joinState, inviteEndsAt } from "@/lib/live";
+import { LiveRoom } from "@/app/dashboard/events/[id]/live/live-room";
+import { Card } from "@/components/ui/card";
+import { LocalTime } from "@/components/ui/local-time";
+
+export const metadata = {
+  title: "1:1 call · batch0",
+  robots: { index: false, follow: false },
+};
+
+export const dynamic = "force-dynamic";
+
+export default async function CallLivePage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  await requireUser();
+  const profile = await getProfile();
+  if (!profile) notFound();
+
+  const invite = await getInvite(params.id);
+  if (!invite) notFound();
+
+  // A 1:1 is private to its two people. Not "can you see this page" but
+  // "are you one of the two" — an admin browsing the safeguarding list can
+  // read that a call happened without being able to walk into it.
+  const isHost = invite.hostId === profile.id;
+  const isInvitee = invite.inviteeId === profile.id;
+  if (!isHost && !isInvitee) notFound();
+
+  if (invite.status !== "accepted") {
+    return (
+      <Shell title={invite.topic || "1:1 call"}>
+        <p className="text-sm text-ink-soft">
+          {invite.status === "invited"
+            ? "This call hasn't been accepted yet."
+            : `This call was ${invite.status}.`}
+        </p>
+        <BackLink />
+      </Shell>
+    );
+  }
+
+  if (!dailyConfigured()) {
+    return (
+      <Shell title={invite.topic || "1:1 call"}>
+        <p className="text-sm text-ink-soft">
+          Live video isn&rsquo;t configured on this environment.
+        </p>
+        <BackLink />
+      </Shell>
+    );
+  }
+
+  const endsAt = inviteEndsAt(invite);
+  const state = joinState(invite.startsAt, endsAt);
+  if (!canJoin(state)) {
+    return (
+      <Shell title={invite.topic || "1:1 call"}>
+        {state === "early" ? (
+          <p className="text-sm text-ink-soft">
+            This opens 15 minutes before it starts —{" "}
+            <LocalTime value={invite.startsAt} />.
+          </p>
+        ) : (
+          <p className="text-sm text-ink-soft">This call has ended.</p>
+        )}
+        <BackLink />
+      </Shell>
+    );
+  }
+
+  // Created on first join rather than when the invite was sent. An invite that
+  // is declined or ignored should never have cost a room, and a room made
+  // weeks ahead would have expired before anyone arrived. Whoever arrives
+  // first creates it; the second person finds it already there.
+  let roomName = invite.roomName;
+  let roomUrl = invite.roomUrl;
+  if (!roomName || !roomUrl) {
+    const room = await createRoom({
+      namePrefix: invite.topic || "1-1",
+      // Not "webinar": both people need camera and mic.
+      mode: "meeting",
+      expiresAt: new Date(new Date(endsAt).getTime() + 2 * 60 * 60 * 1000),
+    });
+    roomName = room.name;
+    roomUrl = room.url;
+    const admin = createAdminClient();
+    await admin
+      .from("call_invites")
+      .update({ daily_room_name: roomName, daily_room_url: roomUrl })
+      .eq("id", invite.id)
+      // Only claim the row if nobody else has — if both people click Join at
+      // the same instant, the loser's room is simply orphaned and expires,
+      // rather than overwriting the URL the winner is already connecting to.
+      .is("daily_room_name", null);
+
+    // Re-read so both racers converge on whichever room actually landed.
+    const settled = await getInvite(invite.id);
+    if (settled?.roomName && settled.roomUrl) {
+      roomName = settled.roomName;
+      roomUrl = settled.roomUrl;
+    }
+  }
+
+  const token = await mintToken({
+    roomName,
+    userId: profile.id,
+    userName: profile.full_name || "Guest",
+    // Both parties are hosts in a 1:1 — there is no audience to hide, and a
+    // viewer token would leave one of them unable to speak.
+    role: "host",
+    expiresAt: new Date(new Date(endsAt).getTime() + 60 * 60 * 1000),
+  });
+
+  return (
+    <LiveRoom
+      title={invite.topic || `1:1 with ${isHost ? invite.inviteeName : invite.hostName}`}
+      roomUrl={roomUrl}
+      token={token}
+      role="host"
+      backHref="/dashboard/calls"
+    />
+  );
+}
+
+function Shell({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mx-auto max-w-2xl">
+      <h1 className="font-display text-2xl font-semibold tracking-[-0.02em] text-ink">
+        {title}
+      </h1>
+      <Card className="mt-4">{children}</Card>
+    </div>
+  );
+}
+
+function BackLink() {
+  return (
+    <Link
+      href="/dashboard/calls"
+      className="mt-4 inline-block text-sm text-phosphor-ink hover:underline"
+    >
+      ← All calls
+    </Link>
+  );
+}

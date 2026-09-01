@@ -12,6 +12,43 @@ import {
   getDiscordSettings,
   buttonRow,
 } from "@/lib/discord";
+import { createRoom, deleteRoom, dailyConfigured } from "@/lib/daily";
+import { DEFAULT_EVENT_MINUTES, type LiveMode } from "@/lib/live";
+import { env } from "@/lib/env";
+
+/**
+ * Where "join" should point for this event, in email and on Discord.
+ *
+ * Hosted events link to batch0.org, never to the room URL directly. The room
+ * is private, so a raw link is useless without a token — and the page that
+ * mints the token is the same page that checks whether the viewer is allowed
+ * in at all.
+ */
+function joinUrl(
+  mode: LiveMode,
+  eventId: string,
+  externalUrl: string | null,
+): string | null {
+  return mode === "hosted"
+    ? `${env.siteUrl}/dashboard/events/${eventId}/live`
+    : externalUrl;
+}
+
+/**
+ * When a hosted room should stop existing.
+ *
+ * Daily deletes the room at `exp`, so this is also the cleanup policy. The
+ * two-hour tail past the end is deliberate: rooms that evict people mid-
+ * sentence because the admin guessed the end time badly are worse than rooms
+ * that linger, and lingering costs nothing (billing is per participant-minute,
+ * and an empty room has none).
+ */
+function roomExpiry(startsAt: string, endsAt: string | null): Date {
+  const end = endsAt
+    ? new Date(endsAt)
+    : new Date(new Date(startsAt).getTime() + DEFAULT_EVENT_MINUTES * 60_000);
+  return new Date(end.getTime() + 2 * 60 * 60 * 1000);
+}
 
 export type EventInput = {
   id?: string;
@@ -25,11 +62,54 @@ export type EventInput = {
   zoom_url: string | null;
   recording_url: string | null;
   visibility: "enrolled" | "staff" | "public";
+  live_mode: LiveMode;
+  daily_room_name?: string | null;
+  daily_room_url?: string | null;
 };
 
 export async function saveEvent(input: EventInput, notify: boolean) {
   await assertPermission("events.manage");
   const admin = createAdminClient();
+
+  // ---- Hosted room lifecycle ---------------------------------------------
+  //
+  // Switching an event to "hosted" creates the room; switching it back (or
+  // deleting the event) tears it down. Done here rather than lazily at join
+  // time so the failure — a bad key, a Daily outage — surfaces to the admin
+  // who is looking at the form, not to twenty students at 7pm.
+  let roomName = input.daily_room_name ?? null;
+  let roomUrl = input.daily_room_url ?? null;
+
+  if (input.live_mode === "hosted" && !roomName) {
+    if (!dailyConfigured()) {
+      throw new Error(
+        "Live video isn't configured — set DAILY_API_KEY and NEXT_PUBLIC_DAILY_DOMAIN, or use a Zoom link instead.",
+      );
+    }
+    const room = await createRoom({
+      namePrefix: input.title || "event",
+      mode: "webinar",
+      // Daily deletes the room at `exp`, so this doubles as cleanup. Generous
+      // padding: an event that overruns should not evict everyone.
+      expiresAt: roomExpiry(input.starts_at, input.ends_at),
+      enableRecording: true,
+    });
+    roomName = room.name;
+    roomUrl = room.url;
+  }
+
+  if (input.live_mode === "external" && roomName) {
+    // Best-effort: an event that can't drop its room should still save as
+    // external. The room expires on its own regardless.
+    try {
+      await deleteRoom(roomName);
+    } catch (err) {
+      console.error("[events] could not delete room", err);
+    }
+    roomName = null;
+    roomUrl = null;
+  }
+
   const payload = {
     cohort_id: input.cohort_id || null,
     type: input.type,
@@ -41,6 +121,9 @@ export async function saveEvent(input: EventInput, notify: boolean) {
     zoom_url: input.zoom_url?.trim() || null,
     recording_url: input.recording_url?.trim() || null,
     visibility: input.visibility,
+    live_mode: input.live_mode,
+    daily_room_name: roomName,
+    daily_room_url: roomUrl,
   };
   let id = input.id;
   if (id) {
@@ -87,7 +170,11 @@ export async function saveEvent(input: EventInput, notify: boolean) {
       const t = Templates.eventReminder({
         title: input.title,
         startsAt: input.starts_at,
-        zoomUrl: input.zoom_url,
+        // A hosted event's join link is on batch0.org, not the provider's
+        // domain. Sending the raw room URL would work but bypasses the token
+        // mint — anyone forwarded the email would hit a private room they
+        // have no ticket for, which reads as "the link is broken".
+        zoomUrl: joinUrl(payload.live_mode, id!, payload.zoom_url),
       });
       const emails = recipients
         .map((e) =>
@@ -152,7 +239,7 @@ export async function saveEvent(input: EventInput, notify: boolean) {
               startsAt: payload.starts_at,
               endsAt: payload.ends_at,
               location: payload.location,
-              zoomUrl: payload.zoom_url,
+              zoomUrl: joinUrl(payload.live_mode, id!, payload.zoom_url),
               type: payload.type,
               cohortName,
             }),
@@ -172,6 +259,24 @@ export async function saveEvent(input: EventInput, notify: boolean) {
 export async function deleteEvent(id: string) {
   await assertPermission("events.manage");
   const admin = createAdminClient();
+
+  // Drop the room before the row, since the row is the only record of the
+  // room's name. Best-effort — a room we fail to delete expires on its own,
+  // whereas an event that refuses to delete is a stuck admin.
+  const { data: existing } = await admin
+    .from("events")
+    .select("daily_room_name")
+    .eq("id", id)
+    .maybeSingle();
+  const roomName = (existing as any)?.daily_room_name as string | null;
+  if (roomName) {
+    try {
+      await deleteRoom(roomName);
+    } catch (err) {
+      console.error("[events] could not delete room on event delete", err);
+    }
+  }
+
   const { error } = await admin.from("events").delete().eq("id", id);
   if (error) throw new Error(error.message);
   await logAudit({

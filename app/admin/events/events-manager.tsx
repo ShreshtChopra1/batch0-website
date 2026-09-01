@@ -113,6 +113,9 @@ export function EventsManager({
               zoom_url: "",
               recording_url: null,
               visibility: "enrolled",
+              live_mode: "external",
+              daily_room_name: null,
+              daily_room_url: null,
             })
           }
         >
@@ -143,7 +146,14 @@ export function EventsManager({
             return (
             <tr key={e.id} className="border-b border-line last:border-0">
               <td className="py-3 text-ink">{e.title}</td>
-              <td className="py-3 text-ink-soft">{e.type}</td>
+              <td className="py-3 text-ink-soft">
+                {e.type}
+                {e.live_mode === "hosted" && (
+                  <span className="ml-1.5 font-mono text-[10px] uppercase tracking-wider text-phosphor-ink">
+                    hosted
+                  </span>
+                )}
+              </td>
               <td className="py-3 text-ink-soft">
                 {cohort?.name ?? (e.cohort_id ? "—" : "Any")}
               </td>
@@ -292,15 +302,29 @@ function EventForm({
           />
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <Label>Location</Label>
-          <Input
-            value={e.location ?? ""}
-            onChange={(ev) => setE({ ...e, location: ev.target.value })}
-            placeholder="Virtual / address"
-          />
-        </div>
+      <div>
+        <Label>Location</Label>
+        <Input
+          value={e.location ?? ""}
+          onChange={(ev) => setE({ ...e, location: ev.target.value })}
+          placeholder="Virtual / address"
+        />
+      </div>
+
+      <Toggle
+        label="Host the video on batch0"
+        description={
+          e.live_mode === "hosted"
+            ? "Students join at batch0.org. Only you get camera and mic — they watch, and can't see how many others are here."
+            : "Off: paste an external link below instead. Students leave the site to join it."
+        }
+        checked={e.live_mode === "hosted"}
+        onChange={(on) =>
+          setE({ ...e, live_mode: on ? "hosted" : "external" })
+        }
+      />
+
+      {e.live_mode === "external" ? (
         <div>
           <Label>Zoom URL</Label>
           <Input
@@ -310,7 +334,24 @@ function EventForm({
             placeholder="https://zoom.us/…"
           />
         </div>
-      </div>
+      ) : (
+        <p className="rounded-md border border-line bg-wash px-3 py-2.5 text-xs text-ink-soft">
+          {initial.daily_room_name ? (
+            <>
+              Room ready. Students join at{" "}
+              <code className="text-phosphor-ink">
+                /dashboard/events/{initial.id}/live
+              </code>{" "}
+              from 15 minutes before the start.
+            </>
+          ) : (
+            <>
+              A private room is created when you save. It expires two hours
+              after the event ends, so nothing is left open.
+            </>
+          )}
+        </p>
+      )}
       <div>
         <Label>Recording URL (after the event)</Label>
         <Input

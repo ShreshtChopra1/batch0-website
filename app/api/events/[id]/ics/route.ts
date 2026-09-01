@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { env } from "@/lib/env";
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -37,6 +38,14 @@ export async function GET(
   }
 
   const ev = event as any;
+  // A hosted event's calendar entry points at batch0.org, not at the room.
+  // The room is private and needs a minted token, so the raw URL in someone's
+  // calendar would fail to open — and the page it points at instead is the
+  // one that decides whether they're allowed in.
+  const joinUrl =
+    ev.live_mode === "hosted"
+      ? `${env.siteUrl}/dashboard/events/${ev.id}/live`
+      : ev.zoom_url;
   const start = toIcsDate(ev.starts_at);
   const end = toIcsDate(
     ev.ends_at ?? new Date(new Date(ev.starts_at).getTime() + 60 * 60 * 1000).toISOString(),
@@ -54,7 +63,7 @@ export async function GET(
     `SUMMARY:${escapeIcs(ev.title)}`,
     ev.description ? `DESCRIPTION:${escapeIcs(ev.description)}` : "",
     ev.location ? `LOCATION:${escapeIcs(ev.location)}` : "",
-    ev.zoom_url ? `URL:${escapeIcs(ev.zoom_url)}` : "",
+    joinUrl ? `URL:${escapeIcs(joinUrl)}` : "",
     "END:VEVENT",
     "END:VCALENDAR",
   ].filter(Boolean);

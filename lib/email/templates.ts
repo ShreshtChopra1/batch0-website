@@ -435,6 +435,37 @@ One account, one pass — the code stops working the moment it's claimed.`,
   }),
 
   /**
+   * A mentor, investor, or admin has proposed a 1:1.
+   *
+   * The time is rendered in UTC with the zone named, because this is sent
+   * server-side and we don't know the recipient's timezone. The CTA carries
+   * the real answer: /dashboard/calls renders every time in their own zone.
+   */
+  callInvite: (args: {
+    hostName: string;
+    startsAt: string;
+    durationMinutes: number;
+    topic: string | null;
+  }) => ({
+    subject: `${args.hostName} invited you to a 1:1 call`,
+    html: layout({
+      preheader: args.topic
+        ? `${args.topic} · ${args.durationMinutes} minutes`
+        : `${args.durationMinutes} minutes`,
+      body: `
+        <h1 style="margin:0 0 12px 0;font-size:20px;color:#fff">A 1:1 call invite</h1>
+        <p><strong>${escape(args.hostName)}</strong> would like ${args.durationMinutes} minutes with you.</p>
+        ${args.topic ? `<p style="margin:12px 0">About: <strong>${escape(args.topic)}</strong></p>` : ""}
+        <p style="margin:12px 0">Proposed for <strong>${new Date(
+          args.startsAt,
+        ).toUTCString()}</strong>. Open your calls to see it in your own timezone.</p>
+        <p style="color:#8b949e;font-size:13px">You can accept or decline — declining is a normal answer, and the host is told either way.</p>
+      `,
+      cta: { url: `${env.siteUrl}/dashboard/calls`, label: "Accept or decline" },
+    }),
+  }),
+
+  /**
    * Weekly "students who went quiet" digest for mentors + admins.
    * Lists each at-risk student with the assigned mentor's name (or a
    * placeholder when unassigned) so the recipient knows whose turn it
