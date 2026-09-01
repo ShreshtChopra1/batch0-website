@@ -168,6 +168,36 @@ export async function createRoom({
   return { name: room.name, url: room.url };
 }
 
+/**
+ * Is this room still live — present on Daily, and not past its own `exp`?
+ *
+ * Any caller reusing a room name it stored earlier must ask this first,
+ * because minting a token for a room that is gone still *succeeds*. Nothing
+ * fails server-side; the only symptom is the browser refusing to connect,
+ * which is a miserable thing to debug from a screenshot.
+ *
+ * Two separate ways a stored name goes bad, and callers care about neither
+ * individually. Rooms are deleted at `exp`, so most dead names 404. But that
+ * reaping lags expiry, so a room can still resolve while being past its `exp`
+ * and unjoinable — treating that as live would hand out a token for a room
+ * nobody can enter, which is the whole failure this guards against.
+ *
+ * A 404 is the answer "no", not an error. Every other status is a real
+ * failure and propagates, exactly as room creation would.
+ */
+export async function roomIsLive(name: string): Promise<boolean> {
+  let room: { config?: { exp?: number } };
+  try {
+    room = await call(`/rooms/${encodeURIComponent(name)}`);
+  } catch (err) {
+    if (err instanceof DailyError && err.status === 404) return false;
+    throw err;
+  }
+  const exp = room.config?.exp;
+  // A room created without an `exp` never expires on its own.
+  return exp === undefined || exp * 1000 > Date.now();
+}
+
 export async function deleteRoom(name: string): Promise<void> {
   try {
     await call(`/rooms/${encodeURIComponent(name)}`, { method: "DELETE" });

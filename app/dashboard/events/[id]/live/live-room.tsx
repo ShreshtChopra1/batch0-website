@@ -61,6 +61,23 @@ function preconnect(url: string) {
 }
 
 /**
+ * Pull something legible out of whatever daily-js threw.
+ *
+ * A rejected join() is frequently not an Error at all: Daily rejects with
+ * plain objects carrying `errorMsg` (sometimes a nested `error.msg`), so
+ * reading only `.message` flattened every distinct failure — a room that no
+ * longer exists, an expired token, a room at capacity — into one generic
+ * sentence. That is precisely what made this class of bug undiagnosable from
+ * a screenshot, so the real reason is preferred and the sentence is only the
+ * last resort.
+ */
+function joinErrorMessage(err: any, fallback: string): string {
+  const detail =
+    err?.errorMsg ?? err?.error?.msg ?? err?.error?.localizedMsg ?? err?.message;
+  return typeof detail === "string" && detail.trim() ? detail : fallback;
+}
+
+/**
  * A live room, on batch0.org.
  *
  * Two halves. Ours is the green room (device check before anyone is watching)
@@ -159,7 +176,7 @@ export function LiveRoom({
           destroy();
         });
         call.on("error", (e: any) => {
-          setError(e?.errorMsg ?? "The call ended unexpectedly.");
+          setError(joinErrorMessage(e, "The call ended unexpectedly."));
           setPhase("error");
         });
 
@@ -174,7 +191,7 @@ export function LiveRoom({
         });
         setPhase("joined");
       } catch (err: any) {
-        setError(err?.message ?? "Could not connect to the room.");
+        setError(joinErrorMessage(err, "Could not connect to the room."));
         setPhase("error");
         destroy();
       }
