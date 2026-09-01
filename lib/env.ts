@@ -40,6 +40,20 @@ export const env = {
   // writable and an open endpoint would be a denial-of-service vector.
   resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET,
 
+  // Daily (live video — webinars and 1:1 calls). Optional: every helper in
+  // lib/daily.ts no-ops when unset, so an environment without a key degrades
+  // to "hosting unavailable" and the rest of the site is unaffected.
+  //
+  // dailyApiKey is server-only and must NEVER gain a NEXT_PUBLIC_ prefix. It
+  // can create rooms and mint owner tokens for ANY room on the domain, so in
+  // the browser it is a key to every call the site will ever host — including
+  // 1:1s it was not issued for.
+  dailyApiKey: process.env.DAILY_API_KEY,
+  // The domain rooms live on, e.g. "batch0.daily.co". Public by design: it
+  // appears in every room URL the client connects to. On its own it grants
+  // nothing, because rooms are private and joining needs a minted token.
+  dailyDomain: process.env.NEXT_PUBLIC_DAILY_DOMAIN,
+
   discordBotToken: process.env.DISCORD_BOT_TOKEN,
   discordGuildId: process.env.DISCORD_GUILD_ID,
   discordRoleStudent: process.env.DISCORD_ROLE_STUDENT,
