@@ -1,0 +1,292 @@
+# Live video on batch0.org — webinars + 1:1 calls
+
+Working plan for `feat/live-video-webinars-and-1on1`.
+
+Two features, one shared primitive:
+
+1. **Webinars** — admin broadcasts with camera/mic/screen; students watch and ask
+   questions. Surfaced on the existing events page.
+2. **1:1 calls** — mentors, investors, and admins invite a specific student to a
+   private call at a specific time.
+
+Both are just "a room, and a signed ticket that says who you are in it". Get that
+one primitive right and both features fall out of it.
+
+---
+
+## 1. What already exists
+
+This is not a greenfield feature. The repo already has most of the scaffolding:
+
+| Thing | Where | State today |
+| --- | --- | --- |
+| `events` table | `supabase/migrations/0005_platform_v2.sql` | Has `zoom_url`, `recording_url`, `visibility` (`public`/`enrolled`/`staff`). RLS already gates reads correctly. |
+| Admin events UI | `app/admin/events/` | Full CRUD + Discord cross-post + email fan-out. `zoom_url` is a free-text field. |
+| Student events page | `app/dashboard/events/page.tsx` | Renders "Join Zoom" as an external `<a>`. |
+| Calendar export | `app/api/events/[id]/ics/route.ts` | Emits `URL:` from `zoom_url`. |
+| Office hours | `mentor_slots` + `mentor_bookings` (`0011_phase2_features.sql`) | **Student-initiated**: a mentor posts open slots, a student claims one. Also a free-text `zoom_url`. |
+| Roles / permissions | `lib/permissions.ts`, `lib/roles.ts` | `events.manage` already exists. Roles are DB rows with a permission array. |
+| Notifications + email | `lib/notifications.ts`, `lib/email/templates.ts` | `Templates.eventReminder` already takes a `zoomUrl`. |
+
+So the shape of the work is **replacing a pasted external URL with a room this
+site owns and controls access to** — not building a scheduling system from
+scratch.
+
+The one genuine gap: office hours runs student→mentor. The requested 1:1 feature
+runs staff→student (the host picks the person). That is a new table, not a tweak
+to `mentor_bookings`.
+
+---
+
+## 2. Provider choice
+
+You do not want to build WebRTC yourself. At a program of this size, SFU
+infrastructure is months of work and a permanent on-call burden to save money you
+are not currently spending.
+
+**Recommendation: [Daily](https://www.daily.co).**
+
+Why it fits this codebase specifically:
+
+- **Daily Prebuilt** is an embeddable iframe with a complete call UI (grid, screen
+  share, chat, recording controls). The call happens *on batch0.org* — which is
+  the actual requirement — without you building a video UI.
+- **`owner_only_broadcast: true`** is literally webinar mode: only owners get
+  camera/mic, everyone else is a viewer. That is feature #1 as a room config flag.
+- **Meeting tokens** are server-minted JWTs carrying `is_owner`, `user_name`, and
+  `exp`. This maps 1:1 onto the existing permission model — `can(caps,
+  "events.manage")` becomes `is_owner: true`. Access control stays in this repo's
+  RLS + permission checks, not in a second system you have to keep in sync.
+- Same primitive serves both features: a webinar is a room with
+  `owner_only_broadcast`, a 1:1 is a room with two tokens.
+
+Cost, from [Daily's pricing page](https://www.daily.co/pricing/video-sdk/):
+
+- 10,000 participant-minutes/month free.
+- $0.004/participant-minute after that (volume discounts to $0.0015).
+- Cloud recording $0.01349 per recorded minute (wall-clock, not × participants).
+
+A 60-minute webinar with 20 students and 1 host = 21 × 60 = **1,260
+participant-minutes**. The free tier covers roughly **8 such webinars a month**
+before you pay anything. A 30-minute 1:1 is 60 participant-minutes. Realistically
+this feature costs $0 for a while, then tens of dollars a month.
+
+Capacity is not a concern: Daily supports up to 1,000 active participants per
+room (set `experimental_optimize_large_calls: true` above 50), and far more in
+broadcast mode.
+
+### Alternatives considered
+
+- **LiveKit** — cheaper per-minute at real scale and open-source (self-hostable,
+  no lock-in). But its free tier is now [5,000 WebRTC
+  minutes](https://livekit.com/pricing) and heavily oriented toward AI voice
+  agents, and it has no drop-in prebuilt UI equivalent — you assemble the call
+  interface from their React components. That is real extra work for this scope.
+  Worth revisiting if video usage ever gets heavy.
+- **Zoom Video SDK** — different product from the Zoom you already link to;
+  embeddable but heavier, and its licensing/pricing is less friendly to a small
+  program.
+- **Jitsi (self-hosted)** — free of per-minute cost, but you own an SFU, TURN
+  servers, and scaling. Not worth it here.
+- **Keep using Zoom links** — the honest baseline. Costs nothing to build. What
+  you lose is: students leave the site, access isn't tied to enrolment, and
+  recordings/attendance live outside your database. Those are exactly the things
+  this feature is for.
+
+---
+
+## 3. What you need to connect
+
+Short list. Everything else is code in this repo.
+
+1. **A Daily account** (daily.co, free to start). Gives you a domain like
+   `batch0.daily.co`.
+2. **API key** — Daily dashboard → Developers → API key.
+3. **Two env vars**, following the `lib/env.ts` optional-integration convention
+   (helpers no-op when unset, so local dev and previews keep working):
+
+   ```
+   DAILY_API_KEY=            # server-only. Never expose — it can create rooms
+                             # and mint owner tokens for any room.
+   NEXT_PUBLIC_DAILY_DOMAIN= # e.g. batch0.daily.co — safe to expose
+   ```
+
+   Add to `.env.local.example`, `lib/env.ts`, and Vercel → Settings →
+   Environment Variables (all three environments).
+4. **One npm dependency**: `@daily-co/daily-js` (the Prebuilt embed). Optionally
+   `@daily-co/daily-react` if you later want a custom UI instead of Prebuilt.
+5. **Optional — a Daily webhook** pointed at `/api/daily/webhook` for
+   `recording.ready-to-download`, so finished recordings auto-populate
+   `events.recording_url` instead of being pasted by hand. Verify the signature
+   the same way `/api/resend/webhook` does (see `lib/svix.ts` for the existing
+   pattern) and exclude it from middleware in `middleware.ts`, as the other
+   signature-authenticated webhooks already are.
+
+**No DNS, no domain config, no new auth system.** The Daily domain is never
+user-visible — students only ever see batch0.org.
+
+### Infra notes
+
+- `next.config.js` sets **no CSP and no `Permissions-Policy`** today, so nothing
+  currently blocks `getUserMedia` or the Daily iframe. If a CSP is ever added it
+  will need `frame-src https://*.daily.co` and `connect-src wss://*.daily.co
+  https://*.daily.co`, and a `Permissions-Policy` will need
+  `camera=(self "https://*.daily.co")` and the same for `microphone` and
+  `display-capture`.
+- Camera/mic require **HTTPS**. Vercel and `localhost` both qualify; a LAN IP
+  like `192.168.x.x` does not, which matters if you test from a phone.
+- Recording storage defaults to Daily's cloud. If you'd rather keep recordings in
+  Supabase Storage alongside challenge uploads (`0047_challenge_uploads_bucket.sql`),
+  Daily can be pointed at an S3-compatible bucket instead.
+
+---
+
+## 4. Design
+
+### 4a. The room primitive
+
+One server module, `lib/daily.ts`, mirroring how `lib/discord.ts` wraps Discord:
+
+- `createRoom({ name, mode, expiresAt })` → `POST https://api.daily.co/v1/rooms`
+- `mintToken({ room, userId, userName, isOwner, expiresAt })` → `POST /meeting-tokens`
+- `deleteRoom(name)`
+- Every function no-ops or throws a typed error when `DAILY_API_KEY` is unset, so
+  an unconfigured environment degrades to "hosting unavailable" rather than 500s.
+
+**The security rule that matters:** rooms are created with `privacy: "private"`.
+A private room cannot be joined without a meeting token, and tokens are only ever
+minted server-side *after* the existing permission checks pass. This means a
+leaked room URL is worthless, and access to a webinar is exactly "whoever the
+`events` RLS policy already says can see this event" — no second access-control
+system to drift out of sync.
+
+Also set `exp` on both room and token (end time + a grace window) with
+`eject_at_token_exp`, so links die on their own instead of becoming permanent
+open doors.
+
+### 4b. Webinars
+
+**Migration** (`0057_hosted_events.sql`):
+
+```sql
+alter table public.events
+  add column if not exists live_mode text not null default 'external'
+    check (live_mode in ('external', 'hosted')),
+  add column if not exists daily_room_name text,
+  add column if not exists daily_room_url text;
+```
+
+`external` is the current behaviour (pasted `zoom_url`), so every existing row
+keeps working untouched. `hosted` means batch0 owns the room.
+
+**Admin** (`app/admin/events/`): a "Host on batch0" toggle next to the Zoom URL
+field. On save with `live_mode = 'hosted'`, `saveEvent` calls `createRoom` with
+`owner_only_broadcast: true` and stores the room name. `deleteEvent` deletes the
+room too.
+
+**Join route** — `app/dashboard/events/[id]/live/page.tsx`:
+
+1. `requireUser()`, then read the event through the **RLS-scoped** client
+   (`lib/supabase/server.ts`, not the admin client) — the existing `events read`
+   policy is the gate, so a student who can't see the event gets a 404 for free.
+2. Refuse to mint outside a join window (say, 15 min before `starts_at` until
+   `ends_at` + 30 min) so tokens aren't issued for an event next month.
+3. Mint a token: `isOwner: can(caps, "events.manage")`.
+4. Pass only the token + room URL to a `"use client"` component that calls
+   `DailyIframe.createFrame()`.
+
+Because owners are the only ones with camera/mic under `owner_only_broadcast`,
+the student experience is a clean watch-and-chat view with no extra UI work.
+
+**Events page** (`app/dashboard/events/page.tsx`): when `live_mode === 'hosted'`,
+"Join Zoom" becomes an internal link to `/dashboard/events/[id]/live` (styled as
+live/starting-soon inside the join window). `app/api/events/[id]/ics/route.ts`
+should emit the batch0 URL rather than `zoom_url` for hosted events, so calendar
+reminders point at the site.
+
+### 4c. 1:1 calls
+
+**New permission key.** Add to `PERMISSION_KEYS` and `PERMISSION_GROUPS` in
+`lib/permissions.ts`:
+
+```
+"calls.invite"  — "Invite someone to a 1:1 call"
+```
+
+Grant it to the `mentor`, `investor`, and `admin` role rows. Because roles are
+DB-driven (migration 0048), any custom role can be given it too — which is the
+right answer to "mentors, investors, and admin" rather than hardcoding three
+role slugs.
+
+**Migration** (`0058_call_invites.sql`), sketch:
+
+```sql
+create table public.call_invites (
+  id uuid primary key default gen_random_uuid(),
+  host_id uuid not null references public.profiles(id) on delete cascade,
+  invitee_id uuid not null references public.profiles(id) on delete cascade,
+  starts_at timestamptz not null,
+  duration_minutes int not null default 30,
+  topic text,
+  status text not null default 'invited'
+    check (status in ('invited','accepted','declined','cancelled','completed')),
+  daily_room_name text,
+  daily_room_url text,
+  recap text,                       -- mirrors mentor_bookings recap (0026)
+  created_at timestamptz not null default now()
+);
+```
+
+RLS: host or invitee may read; host may insert/update; invitee may update only
+`status` (accept/decline). Staff-with-permission checks belong in the server
+action via `assertPermission("calls.invite")` — RLS is the backstop, the action
+is the gate, exactly as the rest of this codebase does it.
+
+**UI**, one shared component rendered from three routes (the panels have
+different layouts but identical needs):
+
+- `/mentor/calls`, `/investor/calls`, `/admin/calls` — "Invite a student":
+  person picker, datetime, duration, topic. Then a list of upcoming/past invites.
+- `/dashboard/calls` — student's incoming invites, accept/decline, join button.
+- Reuse the join route shape from webinars: `/dashboard/calls/[id]/live`, room
+  created lazily on first join, both participants owners (it's a 1:1, both need
+  camera and mic).
+
+**On invite**, reuse existing plumbing rather than inventing any:
+`notifyMany` (`lib/notifications.ts`), a new `Templates.callInvite` alongside
+`eventReminder` in `lib/email/templates.ts`, an ICS endpoint modelled on the
+events one, and nav entries in `lib/nav-config.ts` gated on `perm: "calls.invite"`.
+
+Person-picker scope: mentors should probably see only their assigned students
+(`mentor_assignments`, and note `lib/mentor-scope.ts` already exists for this);
+investors probably only students on teams they've expressed interest in. **This
+is the one product decision worth making deliberately** — an unscoped picker
+means any investor can cold-invite any student, which is a safeguarding question
+as much as a technical one.
+
+---
+
+## 5. Suggested order
+
+Each step is shippable on its own.
+
+1. Daily account + env vars + `lib/daily.ts` + a throwaway `/admin` smoke test
+   that creates a room and joins it. Proves the whole integration in an hour.
+2. Migration `0057` + admin toggle + `/dashboard/events/[id]/live` + events-page
+   link. **Webinars done.**
+3. Recording: enable `enable_recording: "cloud"` for owners; webhook →
+   `events.recording_url`. The past-events "Watch recording" link already exists.
+4. Permission key + migration `0058` + invite UI + student accept/join.
+   **1:1 calls done.**
+5. Polish: attendance rows from Daily webhooks, reminder emails via the existing
+   queue (`lib/email/queue.ts`, already cron-driven in `vercel.json`), recap
+   notes matching `mentor_bookings.recap`.
+
+## 6. Open questions
+
+- Should hosted webinars replace the Zoom field entirely, or coexist? (Plan
+  assumes coexist — `live_mode` defaults to `external`.)
+- Who can each role invite? (See scope note in 4c.)
+- Do webinars need recording from day one, or is live-only enough to start?
+- Should the existing office-hours `zoom_url` also become a hosted room? Same
+  primitive, small extra step — worth folding in once step 1 works.
