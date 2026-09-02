@@ -170,6 +170,20 @@ export const SYSTEM_TEMPLATES: Seed[] = [
     ],
   },
   {
+    key: "nudge.draft",
+    name: "Finish your application",
+    description:
+      "For the “Application in draft, not yet submitted” audience — a nudge to people who started an application but never hit submit. Send it from the composer, or use it as a step on a drip.",
+    category: "lifecycle",
+    subject: "Your batch0 application is almost there, {{first_name}}",
+    preheader: "You started an application — a few minutes finishes it.",
+    body_html:
+      "<p>Hi {{first_name}},</p><p>You started a batch0 application but haven't submitted it yet — it's still sitting in draft. Applications are reviewed on a rolling basis, so the sooner you finish, the sooner we can take a look.</p><p>It only takes a few minutes to pick up where you left off. If something stopped you — a question you weren't sure how to answer, timing, anything — just reply to this email and we'll help.</p>",
+    cta_label: "Finish your application",
+    cta_url: "{{site_url}}/apply",
+    variables: COMMON,
+  },
+  {
     key: "broadcast.blank",
     name: "Blank branded email",
     description:
