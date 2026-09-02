@@ -49,6 +49,9 @@ export async function resolveAudience(
   if (spec.segment === "students") q = q.eq("role", "student");
   else if (spec.segment === "mentors") q = q.eq("role", "mentor");
   else if (spec.segment === "admins") q = q.eq("role", "admin");
+  // "Signed up but never applied" is only meaningful for would-be applicants —
+  // a mentor or admin with no application isn't someone to nudge into one.
+  else if (spec.segment === "no_application") q = q.eq("role", "student");
 
   const { data, error } = await q;
   if (error) {
@@ -91,6 +94,15 @@ export async function resolveAudience(
           return m.appStatus === "waitlisted";
         case "applied":
           return m.appStatus === "submitted";
+        case "no_application":
+          // Has an account but no application row at all — appStatus is null
+          // only when the collapse above found no applications to rank.
+          return m.appStatus === null;
+        case "draft":
+          // Started an application but hasn't submitted it. The status collapse
+          // picks their furthest-along application, so a draft here means every
+          // application they have is still a draft.
+          return m.appStatus === "draft";
         default:
           return true;
       }

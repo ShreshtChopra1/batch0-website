@@ -161,6 +161,8 @@ export function slugifyTemplateKey(input: string): string {
 export const AUDIENCE_SEGMENTS = [
   { value: "everyone", label: "Everyone with an account" },
   { value: "students", label: "Students" },
+  { value: "no_application", label: "Signed up, no application started" },
+  { value: "draft", label: "Application in draft, not yet submitted" },
   { value: "enrolled", label: "Enrolled in a cohort" },
   { value: "accepted", label: "Accepted, not yet paid" },
   { value: "waitlisted", label: "Waitlisted" },
