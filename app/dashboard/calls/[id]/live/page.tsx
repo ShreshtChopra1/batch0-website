@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requireUser, getProfile } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getInvite } from "@/lib/calls";
-import { createRoom, dailyConfigured, mintToken } from "@/lib/daily";
+import { createRoom, dailyConfigured, mintToken, roomIsLive } from "@/lib/daily";
 import { canJoin, joinState, inviteEndsAt } from "@/lib/live";
 import { LiveRoom } from "@/app/dashboard/events/[id]/live/live-room";
 import { Card } from "@/components/ui/card";
@@ -83,6 +83,28 @@ export default async function CallLivePage({
   // first creates it; the second person finds it already there.
   let roomName = invite.roomName;
   let roomUrl = invite.roomUrl;
+  const admin = createAdminClient();
+
+  // A stored room can be stale. Daily deletes every room at its `exp`, but the
+  // invite row keeps the name and URL — so a call joined once and rejoined
+  // after the room expired points at a room that is no longer there. Minting a
+  // token for a missing room still succeeds server-side; the only symptom is
+  // the browser failing to connect ("Could not connect to the room"), and the
+  // row never heals itself, so the call stays broken forever. A name that no
+  // longer resolves is therefore cleared here and treated as if no room was
+  // ever created, dropping straight into the lazy-creation path below.
+  if (roomName && !(await roomIsLive(roomName))) {
+    await admin
+      .from("call_invites")
+      .update({ daily_room_name: null, daily_room_url: null })
+      .eq("id", invite.id)
+      // Clear only the exact dead value we saw — if someone else has already
+      // replaced it with a fresh room, leave theirs in place.
+      .eq("daily_room_name", roomName);
+    roomName = null;
+    roomUrl = null;
+  }
+
   if (!roomName || !roomUrl) {
     const room = await createRoom({
       namePrefix: invite.topic || "1-1",
@@ -92,7 +114,6 @@ export default async function CallLivePage({
     });
     roomName = room.name;
     roomUrl = room.url;
-    const admin = createAdminClient();
     await admin
       .from("call_invites")
       .update({ daily_room_name: roomName, daily_room_url: roomUrl })
