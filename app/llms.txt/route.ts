@@ -15,7 +15,7 @@ export async function GET() {
   lines.push("# batch0");
   lines.push("");
   lines.push(
-    "> batch0 is a live, online startup accelerator for U.S. high schoolers (ages 13–18). Students build a real company across four one-week sprints — Validate, Build, Market, Pitch — and pitch it at a live demo day. Tuition is $130, charged only if accepted; applying is free and no equity is ever taken.",
+    "> batch0 is a live, online startup accelerator for U.S. high schoolers (ages 13–18). Students build a real company across four one-week sprints — Validate, Build, Market, Pitch — and pitch it at a live demo day. Tuition is $78 during the current 40%-off promotion (usually $130), charged only if accepted; applying is free and no equity is ever taken.",
   );
   lines.push("");
   lines.push("## Key pages");

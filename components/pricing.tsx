@@ -14,8 +14,27 @@ export default function Pricing({ config }: { config: SiteConfig }) {
       <div className="mx-auto grid max-w-[1100px] gap-10 md:grid-cols-12 md:gap-8">
         <div className="md:col-span-5">
           <h2 className="font-display text-[clamp(1.75rem,3.5vw,2.5rem)] font-bold leading-[1.08] tracking-[-0.02em] text-ink">
+            {derived.isPromoPrice && (
+              <>
+                {/* The old price is struck through and de-emphasised rather
+                    than removed: a discount is only legible next to the number
+                    it replaces. It is announced to screen readers as
+                    "was $130" instead of relying on the visual strike, which
+                    carries no meaning in the accessibility tree. */}
+                <span className="sr-only">Was </span>
+                <span className="mr-3 font-normal text-ink-faint line-through decoration-[0.075em]">
+                  {derived.listPriceLabel}
+                </span>
+                <span className="sr-only">, now </span>
+              </>
+            )}
             {derived.priceLabel}, once
           </h2>
+          {derived.isPromoPrice && (
+            <p className="mt-3 inline-flex items-center gap-2 bg-phosphor px-2.5 py-1 font-mono text-[12px] font-semibold uppercase tracking-[0.12em] text-on-phosphor">
+              {derived.promoPercentLabel}% off · ends {derived.promoDeadlineLabel}
+            </p>
+          )}
           <p className="mt-4 max-w-[34rem] text-[15px] leading-[1.65] text-ink-soft">
             batch0 is 100% free to apply, tuition is charged only if you&apos;re accepted.
             Comparable summer programs (LaunchX, LeanGap) list tuition in the
@@ -36,7 +55,12 @@ export default function Pricing({ config }: { config: SiteConfig }) {
           <dl className="ledger max-w-[30rem] text-ink-soft">
             {[
               ["Application", "free"],
-              ["Tuition", `${derived.priceLabel} · only if accepted`],
+              [
+                "Tuition",
+                derived.isPromoPrice
+                  ? `${derived.priceLabel} · was ${derived.listPriceLabel} · only if accepted`
+                  : `${derived.priceLabel} · only if accepted`,
+              ],
               ["Hidden fees", "none"],
               ["Equity taken", "none"],
               ["Refunds", "see refund policy"],

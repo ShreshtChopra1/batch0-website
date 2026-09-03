@@ -6,6 +6,7 @@ import { requireUser, getProfile } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
 import { Card } from "@/components/ui/card";
 import { getCountryFromHeaders, getRegionalPrice } from "@/lib/pricing";
+import { promoPriceCents } from "@/lib/promo";
 import {
   passDiscountCentsForUser,
 } from "@/lib/founder-pass";
@@ -61,15 +62,19 @@ export default async function AcceptedPage() {
   const basePriceCents = app.cohort?.price_cents ?? 13000;
   const country = getCountryFromHeaders(headers());
   const regionalCents = getRegionalPrice(basePriceCents, country).amountCents;
+  // The site-wide promotion, applied before the pass discount — the same order
+  // app/api/stripe/checkout uses. Without it this page quotes list price while
+  // Stripe charges the sale price.
+  const saleCents = promoPriceCents(regionalCents);
   // The discount is read off the holder's own tier and resolved against the
   // regional amount — the same call checkout makes, so this page and Stripe
   // can't disagree about what they owe.
   const passDiscountCents = await passDiscountCentsForUser(
     supabase,
     user.id,
-    regionalCents,
+    saleCents,
   );
-  const priceCents = Math.max(0, regionalCents - passDiscountCents);
+  const priceCents = Math.max(0, saleCents - passDiscountCents);
   const price = `$${(priceCents / 100).toFixed(0)}`;
 
   const cohortName = app.cohort?.name ?? "batch0";

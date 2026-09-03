@@ -1,0 +1,108 @@
+// The 40%-off tuition promotion.
+//
+// This module exists so the promo has exactly ONE end date. The previous
+// version of this push was a hand-edited string in the root layout with a
+// comment asking a human to remember to take it out — which is the failure
+// mode where a site advertises an expired sale for a month because nobody
+// redeployed. Everything date-dependent reads `activePromo()` instead, so the
+// offer disappears from the site on its own.
+//
+// DEPENDENCY-FREE on purpose: imported by metadata builders that run during
+// static generation, so it must not reach for a database or an environment.
+
+/**
+ * End of the promotion — 11:59:59 PM Eastern on September 9, 2026.
+ *
+ * Written with an explicit offset rather than a bare date: "until Sept 9" to a
+ * U.S. audience means the end of that evening, and a plain `2026-09-10T00:00Z`
+ * would have cut the offer off at 8 PM Eastern on the 9th, killing the last
+ * night of a deadline-driven push.
+ */
+export const PROMO_ENDS_AT = "2026-09-09T23:59:59-04:00";
+
+/** Percentage off the list price. Display only — see the note in `Promo`. */
+export const PROMO_PERCENT = 40;
+
+/**
+ * schema.org `priceValidUntil` for the Offer node. Exported separately from
+ * `activePromo()` because the root layout builds its JSON-LD at module scope,
+ * where there is no request and therefore no meaningful "now".
+ */
+export const PROMO_VALID_UNTIL = "2026-09-09";
+
+export type Promo = {
+  percent: number;
+  /** "Sept 9" — the deadline, for a title tag with ~60 characters to spend. */
+  shortDeadline: string;
+  /** "September 9" — the deadline where there is room to spell it out. */
+  longDeadline: string;
+  /** "2026-09-09" — schema.org `priceValidUntil` format. */
+  validUntil: string;
+};
+
+const PROMO: Promo = {
+  percent: PROMO_PERCENT,
+  shortDeadline: "Sept 9",
+  longDeadline: "September 9",
+  validUntil: "2026-09-09",
+};
+
+/**
+ * The promo if it is still running, otherwise null.
+ *
+ * IMPORTANT: this governs what the site *advertises*, not what Stripe charges.
+ * The amount billed comes from the `cohorts.price_cents` row, which does not
+ * revert on its own — when this returns null the marketing copy goes back to
+ * list price, but the cohort row must be set back to 12999 by hand in
+ * /admin/cohorts or checkout will keep charging the sale price.
+ */
+export function activePromo(now: Date = new Date()): Promo | null {
+  return now.getTime() <= new Date(PROMO_ENDS_AT).getTime() ? PROMO : null;
+}
+
+/**
+ * What this promo charges for a given list price, in cents.
+ *
+ * Rounded to a whole dollar because every price the site quotes is whole
+ * dollars: 40% off the $129.99 list is $77.994, and billing that literally
+ * would put "$77.99" on a card statement under a headline promising "$78".
+ * Rounding here means the number advertised and the number charged are the
+ * same number, which is the entire point of computing this in one place.
+ *
+ * Applied on top of regional pricing, never inside it — see lib/pricing.ts.
+ * That ordering is what makes the discount reach every region equally
+ * ($129.99 -> $78 in the U.S., $115 -> $69 in India) without anyone
+ * hand-syncing a table.
+ *
+ * Returns `baseCents` unchanged once the promo has ended, which is what makes
+ * expiry a no-op rather than a cleanup task.
+ */
+export function promoPriceCents(baseCents: number, now: Date = new Date()): number {
+  const promo = activePromo(now);
+  if (!promo) return baseCents;
+  const discounted = (baseCents * (100 - promo.percent)) / 100;
+  return Math.round(discounted / 100) * 100;
+}
+
+/**
+ * The homepage <title> while the promo runs.
+ *
+ * Budgeted to 55 characters because Google renders roughly the first 60 of a
+ * title and drops the rest. The offer and its deadline lead; the brand stays
+ * last, per the convention documented in app/layout.tsx.
+ */
+export function promoTitle(promo: Promo): string {
+  return `${promo.percent}% Off Until ${promo.shortDeadline} — Startup Accelerator — batch0`;
+}
+
+/**
+ * The homepage meta description while the promo runs.
+ *
+ * Replaces the cohort-dates snippet rather than prefixing it: the generated
+ * description already spends its ~155 character budget, and Google truncates
+ * the tail. The deadline is worth more than the cohort dates for as long as
+ * the offer is live.
+ */
+export function promoMetaDescription(promo: Promo, salePrice: string, listPrice: string): string {
+  return `${promo.percent}% off until ${promo.longDeadline}: tuition is ${salePrice}, not ${listPrice}. batch0 is a live, online startup accelerator for high schoolers. Free to apply, no equity taken.`;
+}

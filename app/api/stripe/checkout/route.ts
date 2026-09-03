@@ -5,6 +5,7 @@ import { stripe } from "@/lib/stripe";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { env } from "@/lib/env";
 import { getCountryFromHeaders, getRegionalPrice } from "@/lib/pricing";
+import { activePromo, promoPriceCents } from "@/lib/promo";
 import { grantDiscountCents } from "@/lib/founder-pass-tiers";
 import { getPassGrantForUser } from "@/lib/founder-pass";
 import {
@@ -92,18 +93,32 @@ export async function POST(req: Request) {
   // requested — the amount comes from the tier on the holder's own pass, never
   // from the client.
   //
-  // Resolved against the REGIONAL amount, not the list price, so a "full ride"
-  // waives what this applicant would actually be billed. grantDiscountCents
-  // clamps to that amount, which is why the Math.max below can now only ever
-  // be defensive.
+  // Site-wide promotion, applied on top of the regional price and BEFORE the
+  // founder-pass discount. The ordering matters and is the same one the
+  // marketing copy uses (lib/site-config derive()), so the price quoted on the
+  // page is the price the card is charged.
+  //
+  // Deliberately computed here rather than read from `cohorts.price_cents`.
+  // Writing a sale into that row would mean a human has to remember to write
+  // it back on September 10 — and until they did, Stripe would keep charging
+  // the sale price with nothing on the site saying so. This expires itself.
+  const promo = activePromo();
+  const promoPriceCentsAmount = promoPriceCents(regional.amountCents);
+  const promoDiscountCents = regional.amountCents - promoPriceCentsAmount;
+
+  // Resolved against the PROMO price, not list, so a pass and a sale stack in
+  // the customer's favour without a "full ride" ever leaving a balance.
   const passDiscountCents = passGrant
-    ? grantDiscountCents(passGrant, regional.amountCents)
+    ? grantDiscountCents(passGrant, promoPriceCentsAmount)
     : 0;
-  const priceCents = Math.max(0, regional.amountCents - passDiscountCents);
+  const priceCents = Math.max(0, promoPriceCentsAmount - passDiscountCents);
   // A fixed Stripe Price can't carry the discounted amount, so any discount
   // forces the ad-hoc price_data path (same mechanics as regional pricing).
+  // The promo is a discount like any other here — without this it would be
+  // advertised on the page and then silently NOT applied at checkout for
+  // every full-price U.S. applicant, which is the worst possible failure.
   const usePriceId =
-    stripePriceId && !regional.isRegional && !passDiscountCents;
+    stripePriceId && !regional.isRegional && !passDiscountCents && !promoDiscountCents;
 
   // Always use the canonical site URL — never a request-controlled
   // header. The Origin header is attacker-controllable and would let a
@@ -135,9 +150,17 @@ export async function POST(req: Request) {
                 unit_amount: priceCents,
                 product_data: {
                   name: `batch0 — ${cohortName}`,
-                  description: passDiscountCents
-                    ? `One-time enrollment fee for the batch0 accelerator. Includes your $${(passDiscountCents / 100).toFixed(0)} founder pass discount.`
-                    : "One-time enrollment fee for the batch0 accelerator.",
+                  description: [
+                    "One-time enrollment fee for the batch0 accelerator.",
+                    promoDiscountCents && promo
+                      ? `Includes ${promo.percent}% off (save $${(promoDiscountCents / 100).toFixed(0)}, ends ${promo.longDeadline}).`
+                      : "",
+                    passDiscountCents
+                      ? `Includes your $${(passDiscountCents / 100).toFixed(0)} founder pass discount.`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" "),
                 },
               },
             },

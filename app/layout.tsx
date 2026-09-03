@@ -13,6 +13,8 @@ import {
   JsonLd,
 } from "@/lib/schema";
 import { AUTH_FLAG_SCRIPT } from "@/lib/auth-flag";
+import { PROMO_VALID_UNTIL } from "@/lib/promo";
+import { SaleBanner } from "@/components/sale-banner";
 import "./globals.css";
 
 // Type system (DESIGN.md): one idea — a terminal. VT323 is the DEC VT320
@@ -49,11 +51,12 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE),
   // Search phrase first, brand last: "batch0" carries no search intent yet,
   // so the page has to be findable by what it *is*, not what it's called.
-  // The promo tail ("40% off — apply now") is a deliberate, temporary override
-  // to run the discount push; drop it back to the plain title when the offer
-  // ends. Note Google may truncate the tail in the SERP — it displays roughly
-  // the first ~60 characters — so the offer can read as clipped on some queries.
-  title: "Startup Accelerator for High Schoolers — batch0 — Everything 40% Off, Apply Now",
+  //
+  // This stays PLAIN even while the 40%-off promo runs. The promo title lives
+  // in app/page.tsx's `generateMetadata`, which re-runs per request and can
+  // therefore expire itself; this export is evaluated at build time and would
+  // pin an expired sale to every route that inherits it. See lib/promo.ts.
+  title: "Startup Accelerator for High Schoolers — batch0",
   // Deliberately date-free. The earlier version of this string hardcoded the
   // cohort dates "mirroring" FALLBACK_COHORT, and drifted twice — production
   // spent weeks telling Google "Cohort 1 runs Jul 30–Sep 13" while the page
@@ -81,7 +84,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Startup Accelerator for High Schoolers — batch0",
     description:
-      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $130, free to apply, no equity taken.",
+      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $78 (40% off), free to apply, no equity taken.",
     url: SITE,
     siteName: "batch0",
     // Image is generated dynamically by app/opengraph-image.tsx and picked
@@ -92,7 +95,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Startup Accelerator for High Schoolers — batch0",
     description:
-      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $130, free to apply, no equity taken.",
+      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $78 (40% off), free to apply, no equity taken.",
   },
   // Google Search Console ownership. Set GOOGLE_SITE_VERIFICATION in the
   // Vercel project env to the bare token Google gives you (not the whole meta
@@ -182,10 +185,15 @@ const orgJsonLd = {
   ],
   offers: {
     "@type": "Offer",
-    price: "129.99",
+    price: "78.00",
     priceCurrency: "USD",
     category: "Tuition",
     availability: "https://schema.org/LimitedAvailability",
+    // The promo price is only honest with the date it stops being true. This
+    // is a build-time literal, so it is the one promo value that does not
+    // expire on its own — it goes stale rather than wrong, and the price
+    // beside it has to be reverted by hand anyway (lib/promo.ts).
+    priceValidUntil: PROMO_VALID_UNTIL,
     description:
       "Cohort tuition, charged only if accepted. Free to apply. Reduced regional pricing available in select countries.",
   },
@@ -269,6 +277,10 @@ export default function RootLayout({
               admin/mentor/investor layouts and the standalone pages) — putting
               it back here would also duplicate the id on every page that
               already carries it. */}
+          {/* Above the navbar and outside the #main-content target on
+              purpose: it is an announcement about the whole site, not part of
+              any page's content, and "Skip to content" should skip it. */}
+          <SaleBanner />
           <div>{children}</div>
           <JsonLd data={orgJsonLd} />
           <JsonLd data={websiteJsonLd} />
