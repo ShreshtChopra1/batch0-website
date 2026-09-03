@@ -49,7 +49,11 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE),
   // Search phrase first, brand last: "batch0" carries no search intent yet,
   // so the page has to be findable by what it *is*, not what it's called.
-  title: "Startup Accelerator for High Schoolers — batch0",
+  // The promo tail ("40% off — apply now") is a deliberate, temporary override
+  // to run the discount push; drop it back to the plain title when the offer
+  // ends. Note Google may truncate the tail in the SERP — it displays roughly
+  // the first ~60 characters — so the offer can read as clipped on some queries.
+  title: "Startup Accelerator for High Schoolers — batch0 — Everything 40% Off, Apply Now",
   // Deliberately date-free. The earlier version of this string hardcoded the
   // cohort dates "mirroring" FALLBACK_COHORT, and drifted twice — production
   // spent weeks telling Google "Cohort 1 runs Jul 30–Sep 13" while the page
