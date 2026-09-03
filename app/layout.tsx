@@ -13,6 +13,7 @@ import {
   JsonLd,
 } from "@/lib/schema";
 import { AUTH_FLAG_SCRIPT } from "@/lib/auth-flag";
+import { SaleBanner } from "@/components/sale-banner";
 import "./globals.css";
 
 // Type system (DESIGN.md): one idea — a terminal. VT323 is the DEC VT320
@@ -49,11 +50,25 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE),
   // Search phrase first, brand last: "batch0" carries no search intent yet,
   // so the page has to be findable by what it *is*, not what it's called.
-  // The promo tail ("40% off — apply now") is a deliberate, temporary override
-  // to run the discount push; drop it back to the plain title when the offer
-  // ends. Note Google may truncate the tail in the SERP — it displays roughly
-  // the first ~60 characters — so the offer can read as clipped on some queries.
-  title: "Startup Accelerator for High Schoolers — batch0 — Everything 40% Off, Apply Now",
+  //
+  // This stays PLAIN even while the 40%-off promo runs, and that is the
+  // resolution of a real conflict rather than an oversight: #280 landed on
+  // main appending "— Everything 40% Off, Apply Now" to this string, and this
+  // branch deliberately replaces that approach.
+  //
+  // Two reasons the appended version had to go. It was 83 characters with the
+  // offer starting at 48, and Google renders roughly the first 60 — the promo
+  // sat entirely past the truncation point, so the SERP would have read
+  // "…— batch0 — Everythin…" and shown no offer at all. And this export is
+  // evaluated at build time, so the sale could only ever be removed by a human
+  // remembering to push after September 9.
+  //
+  // The promo title now lives in app/page.tsx's `generateMetadata`, which
+  // re-runs per request behind the homepage's ISR window and therefore expires
+  // itself, and which only affects the one route that actually ranks for
+  // "batch0" instead of every route that inherits this default. See
+  // lib/promo.ts.
+  title: "Startup Accelerator for High Schoolers — batch0",
   // Deliberately date-free. The earlier version of this string hardcoded the
   // cohort dates "mirroring" FALLBACK_COHORT, and drifted twice — production
   // spent weeks telling Google "Cohort 1 runs Jul 30–Sep 13" while the page
@@ -140,6 +155,13 @@ export const metadata: Metadata = {
 // in lib/site-config.ts. It is intentionally not read from the DB: this is
 // the root layout, so a query here would hit every authenticated page too.
 // Pages that need the live, regional price (/program) emit it themselves.
+//
+// It is also deliberately the LIST price during a promotion. This node is
+// built at module scope in a statically generated layout, so a sale price
+// written here would outlive the sale and keep asserting a discount that
+// checkout no longer honours — the same build-time freeze that keeps the
+// promo out of `title` above. A promo-aware Offer belongs on a per-request
+// page, not here.
 const orgJsonLd = {
   "@context": "https://schema.org",
   "@type": "EducationalOrganization",
@@ -269,6 +291,10 @@ export default function RootLayout({
               admin/mentor/investor layouts and the standalone pages) — putting
               it back here would also duplicate the id on every page that
               already carries it. */}
+          {/* Above the navbar and outside the #main-content target on
+              purpose: it is an announcement about the whole site, not part of
+              any page's content, and "Skip to content" should skip it. */}
+          <SaleBanner />
           <div>{children}</div>
           <JsonLd data={orgJsonLd} />
           <JsonLd data={websiteJsonLd} />

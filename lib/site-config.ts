@@ -5,6 +5,7 @@ import {
   createPublicReadClient,
 } from "@/lib/supabase/admin";
 import { getRegionalPrice } from "@/lib/pricing";
+import { activePromo, promoPriceCents } from "@/lib/promo";
 import {
   buildMetaDescription,
   formatApplyBy,
@@ -78,8 +79,21 @@ export type SiteConfig = {
     priceLabel: string;
     /** Price in cents the visitor will actually be charged. */
     priceCents: number;
-    /** Default (non-regional) price label, e.g. "$130". */
+    /** Default (non-regional) price label, e.g. "$130". Pre-promotion. */
     basePriceLabel: string;
+    /**
+     * "$130" — what this visitor's tuition costs BEFORE any active promotion,
+     * regional override included. Equal to `priceLabel` when no promo is
+     * running, which is what lets the UI render a strikethrough unconditionally
+     * and simply have nothing to cross out off-sale.
+     */
+    listPriceLabel: string;
+    /** True while a promotion is discounting this visitor's price. */
+    isPromoPrice: boolean;
+    /** "40" — percent off, for sale copy. "" when no promo is running. */
+    promoPercentLabel: string;
+    /** "September 9" — when the promo ends. "" when none is running. */
+    promoDeadlineLabel: string;
     /** True when the visitor's region has a price override applied. */
     isRegionalPrice: boolean;
     /** ISO-3166-1 alpha-2 country code we resolved for this visitor. */
@@ -210,7 +224,16 @@ function derive(
     : cohortName;
   const baseCents = c.priceCents ?? 0;
   const regional = getRegionalPrice(baseCents, countryCode);
-  const dollars = Math.round(regional.amountCents / 100);
+
+  // The promotion is the LAST thing applied to a price, on top of the regional
+  // override rather than inside it, so one sale discounts every region equally
+  // and none of it has to be unwound by hand when the offer ends. Every label
+  // below is derived from this single pair, so the site cannot advertise one
+  // price and charge another.
+  const promo = activePromo();
+  const chargeCents = promoPriceCents(regional.amountCents);
+  const dollars = Math.round(chargeCents / 100);
+  const listDollars = Math.round(regional.amountCents / 100);
   const baseDollars = Math.round(baseCents / 100);
 
   const spotsLeft = Math.max(0, (c.capacity ?? 0) - enrolledCount);
@@ -259,8 +282,12 @@ function derive(
     applyByLabel: formatApplyBy(c.applicationsCloseAt),
     priceDollars: String(dollars),
     priceLabel: `$${dollars}`,
-    priceCents: regional.amountCents,
+    priceCents: chargeCents,
     basePriceLabel: `$${baseDollars}`,
+    listPriceLabel: `$${listDollars}`,
+    isPromoPrice: promo !== null && chargeCents !== regional.amountCents,
+    promoPercentLabel: promo ? String(promo.percent) : "",
+    promoDeadlineLabel: promo ? promo.longDeadline : "",
     isRegionalPrice: regional.isRegional,
     country: regional.country,
     capacityLabel: String(c.capacity),

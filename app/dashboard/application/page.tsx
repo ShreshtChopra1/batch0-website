@@ -6,6 +6,7 @@ import { getStudentAccess } from "@/lib/access";
 import { Card, StatusBadge } from "@/components/ui/card";
 import { ButtonLink } from "@/components/ui/button";
 import { getCountryFromHeaders, getRegionalPrice } from "@/lib/pricing";
+import { promoPriceCents } from "@/lib/promo";
 import { getPassGrantForUser } from "@/lib/founder-pass";
 import { grantDiscountCents } from "@/lib/founder-pass-tiers";
 import { getRebuildForUser, type Rebuild } from "@/lib/founder-pass-perks";
@@ -76,6 +77,10 @@ export default async function ApplicationPage({
   const basePriceCents = app.cohort?.price_cents ?? 13000;
   const country = getCountryFromHeaders(headers());
   const regionalCents = getRegionalPrice(basePriceCents, country).amountCents;
+  // The site-wide promotion, applied before the pass discount — the same order
+  // app/api/stripe/checkout uses. Without it this page quotes list price while
+  // Stripe charges the sale price.
+  const saleCents = promoPriceCents(regionalCents);
   // Mirror the checkout math (app/api/stripe/checkout) exactly — regional
   // price, then the tier's discount resolved against it — so the number on
   // this card is the number Stripe charges.
@@ -83,7 +88,7 @@ export default async function ApplicationPage({
     app.status === "accepted" && passGrant
       ? grantDiscountCents(passGrant, regionalCents)
       : 0;
-  const priceCents = Math.max(0, regionalCents - passDiscountCents);
+  const priceCents = Math.max(0, saleCents - passDiscountCents);
 
   // The seven-day rebuild (perk 4) is only offered to a pass holder whose most
   // recent application was declined. Read through the admin client — the

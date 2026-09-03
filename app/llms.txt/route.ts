@@ -4,6 +4,10 @@ import { getAllPostsMeta } from "@/lib/blog";
 // Adoption is still negligible in 2026 (Google confirmed it ignores the file),
 // so this is a low-cost hedge, not a core strategy. It's auto-generated from
 // the same content as the site, so it stays accurate for free.
+//
+// Quotes LIST tuition, never a promotion: `force-static` below means this file
+// is built once, so a sale price written here would still be served after the
+// sale ended. The evergreen number is the one that stays true for free.
 export const dynamic = "force-static";
 
 const SITE = "https://batch0.org";

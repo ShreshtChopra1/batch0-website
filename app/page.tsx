@@ -14,6 +14,7 @@ import { ChallengeMarquee } from "@/components/challenge-marquee";
 import { ChallengeWinners } from "@/components/challenge-winners";
 import { FeaturedGuides } from "@/components/featured-guides";
 import { getPublicSiteConfig, metaDescription } from "@/lib/site-config";
+import { activePromo, promoTitle, promoMetaDescription } from "@/lib/promo";
 import { getFeaturedPosts, getAllPostsMeta } from "@/lib/blog";
 import { getActiveChallenge, getPublicWinners } from "@/lib/challenges";
 import { RegionalPrice } from "@/components/regional-price";
@@ -39,8 +40,27 @@ export async function generateMetadata(): Promise<Metadata> {
     // program for most searchers. The page body still localises.
     countryCode: null,
   });
-  const description = metaDescription(config);
+  // The 40%-off push. It lives HERE rather than on the root layout's static
+  // `metadata` for one reason: this function re-runs per request (behind the
+  // 300s ISR window below), so the promo drops off the homepage within five
+  // minutes of its deadline with no deploy. A string in the layout is frozen
+  // at build time and would keep advertising an expired sale until someone
+  // remembered to push. See lib/promo.ts.
+  //
+  // The homepage is also the page that ranks for "batch0", so it is the one
+  // whose title tag the offer actually needs to reach. Every other route keeps
+  // the plain layout title, which is why an expiry can never strand the promo
+  // on 130+ pages.
+  const promo = activePromo();
+  const description = promo
+    ? promoMetaDescription(
+        promo,
+        config.derived.priceLabel,
+        config.derived.listPriceLabel,
+      )
+    : metaDescription(config);
   return {
+    ...(promo ? { title: promoTitle(promo) } : {}),
     description,
     alternates: { canonical: "/" },
     openGraph: { description },

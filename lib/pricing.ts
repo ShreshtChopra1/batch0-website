@@ -13,6 +13,14 @@
 
 const PRICE_OVERRIDES_CENTS: Record<string, number> = {
   // India — PPP-adjusted vs. the U.S. base.
+  //
+  // These are LIST prices. A promotion is never encoded here: this table is
+  // absolute rather than proportional, so a sale written into it would have to
+  // be hand-reverted, and a stale entry inverts the whole point of the table
+  // (a 40%-off U.S. base of $78 against a forgotten $115 here would charge
+  // India *more* than the U.S.). Promotions are applied on top, arithmetically,
+  // by lib/promo.ts — which means they discount every region equally and
+  // expire on their own.
   IN: 11500,
 };
 
