@@ -13,7 +13,6 @@ import {
   JsonLd,
 } from "@/lib/schema";
 import { AUTH_FLAG_SCRIPT } from "@/lib/auth-flag";
-import { PROMO_VALID_UNTIL } from "@/lib/promo";
 import { SaleBanner } from "@/components/sale-banner";
 import "./globals.css";
 
@@ -52,10 +51,23 @@ export const metadata: Metadata = {
   // Search phrase first, brand last: "batch0" carries no search intent yet,
   // so the page has to be findable by what it *is*, not what it's called.
   //
-  // This stays PLAIN even while the 40%-off promo runs. The promo title lives
-  // in app/page.tsx's `generateMetadata`, which re-runs per request and can
-  // therefore expire itself; this export is evaluated at build time and would
-  // pin an expired sale to every route that inherits it. See lib/promo.ts.
+  // This stays PLAIN even while the 40%-off promo runs, and that is the
+  // resolution of a real conflict rather than an oversight: #280 landed on
+  // main appending "— Everything 40% Off, Apply Now" to this string, and this
+  // branch deliberately replaces that approach.
+  //
+  // Two reasons the appended version had to go. It was 83 characters with the
+  // offer starting at 48, and Google renders roughly the first 60 — the promo
+  // sat entirely past the truncation point, so the SERP would have read
+  // "…— batch0 — Everythin…" and shown no offer at all. And this export is
+  // evaluated at build time, so the sale could only ever be removed by a human
+  // remembering to push after September 9.
+  //
+  // The promo title now lives in app/page.tsx's `generateMetadata`, which
+  // re-runs per request behind the homepage's ISR window and therefore expires
+  // itself, and which only affects the one route that actually ranks for
+  // "batch0" instead of every route that inherits this default. See
+  // lib/promo.ts.
   title: "Startup Accelerator for High Schoolers — batch0",
   // Deliberately date-free. The earlier version of this string hardcoded the
   // cohort dates "mirroring" FALLBACK_COHORT, and drifted twice — production
@@ -84,7 +96,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Startup Accelerator for High Schoolers — batch0",
     description:
-      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $78 (40% off), free to apply, no equity taken.",
+      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $130, free to apply, no equity taken.",
     url: SITE,
     siteName: "batch0",
     // Image is generated dynamically by app/opengraph-image.tsx and picked
@@ -95,7 +107,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Startup Accelerator for High Schoolers — batch0",
     description:
-      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $78 (40% off), free to apply, no equity taken.",
+      "A live, online startup accelerator for U.S. high schoolers. Build a real company across four build sprints, then pitch it at demo day. $130, free to apply, no equity taken.",
   },
   // Google Search Console ownership. Set GOOGLE_SITE_VERIFICATION in the
   // Vercel project env to the bare token Google gives you (not the whole meta
@@ -143,6 +155,13 @@ export const metadata: Metadata = {
 // in lib/site-config.ts. It is intentionally not read from the DB: this is
 // the root layout, so a query here would hit every authenticated page too.
 // Pages that need the live, regional price (/program) emit it themselves.
+//
+// It is also deliberately the LIST price during a promotion. This node is
+// built at module scope in a statically generated layout, so a sale price
+// written here would outlive the sale and keep asserting a discount that
+// checkout no longer honours — the same build-time freeze that keeps the
+// promo out of `title` above. A promo-aware Offer belongs on a per-request
+// page, not here.
 const orgJsonLd = {
   "@context": "https://schema.org",
   "@type": "EducationalOrganization",
@@ -185,15 +204,10 @@ const orgJsonLd = {
   ],
   offers: {
     "@type": "Offer",
-    price: "78.00",
+    price: "129.99",
     priceCurrency: "USD",
     category: "Tuition",
     availability: "https://schema.org/LimitedAvailability",
-    // The promo price is only honest with the date it stops being true. This
-    // is a build-time literal, so it is the one promo value that does not
-    // expire on its own — it goes stale rather than wrong, and the price
-    // beside it has to be reverted by hand anyway (lib/promo.ts).
-    priceValidUntil: PROMO_VALID_UNTIL,
     description:
       "Cohort tuition, charged only if accepted. Free to apply. Reduced regional pricing available in select countries.",
   },

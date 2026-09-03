@@ -19,12 +19,6 @@ import { getFeaturedPosts, getAllPostsMeta } from "@/lib/blog";
 import { getActiveChallenge, getPublicWinners } from "@/lib/challenges";
 import { RegionalPrice } from "@/components/regional-price";
 
-// The pre-promo list price, quoted only to anchor the discount ("$78, not
-// $130"). It is deliberately a constant and not a second database column: it
-// describes what tuition WAS, which is a fact about the promo, not about the
-// live cohort row. Update it here if list price ever genuinely changes.
-const LIST_PRICE_LABEL = "$130";
-
 // The homepage snippet is the single highest-leverage string on the site: it
 // is what a student sees on Google before they ever reach us, and for most of
 // them it is the only thing they will read. So it is generated per request
@@ -61,8 +55,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const description = promo
     ? promoMetaDescription(
         promo,
-        config.derived.basePriceLabel,
-        LIST_PRICE_LABEL,
+        config.derived.priceLabel,
+        config.derived.listPriceLabel,
       )
     : metaDescription(config);
   return {
