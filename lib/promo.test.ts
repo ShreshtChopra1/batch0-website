@@ -4,6 +4,8 @@ import {
   PROMO_ENDS_AT,
   PROMO_PERCENT,
   PROMO_LIST_PRICE_CENTS,
+  PROMO_SALE_PRICE_CENTS,
+  listPriceCents,
   activePromo,
   promoPriceCents,
   promoTitle,
@@ -159,4 +161,50 @@ test("the guard never blocks a legitimate regional discount", () => {
   // discounted in full — the guard must not quietly cancel regional pricing.
   assert.equal(promoPriceCents(IN_LIST, DURING), 6900);
   assert.ok(promoPriceCents(IN_LIST, DURING) < IN_LIST);
+});
+
+
+// ---------------------------------------------------------------------------
+// Reading back a row that was hand-set to the sale price
+// ---------------------------------------------------------------------------
+
+test("a row holding the sale price is read as the list price it came from", () => {
+  assert.equal(listPriceCents(PROMO_SALE_PRICE_CENTS), PROMO_LIST_PRICE_CENTS);
+});
+
+test("every other price is passed through untouched", () => {
+  for (const cents of [US_LIST, IN_LIST, 13000, 5000, 0]) {
+    assert.equal(listPriceCents(cents), cents);
+  }
+});
+
+test("the bad row charges $78 during the sale and $130 after it", () => {
+  // The whole point. cohorts.price_cents holds 7800 — the sale price, written
+  // in by hand. Normalising it back to list means the site is correct in both
+  // states with no database edit at all:
+  const row = PROMO_SALE_PRICE_CENTS;
+  assert.equal(promoPriceCents(listPriceCents(row), DURING), 7800);
+  assert.equal(promoPriceCents(listPriceCents(row), AFTER), 12999);
+});
+
+test("a correct row behaves identically, so repairing the data changes nothing", () => {
+  // Once cohorts.price_cents goes back to 12999 this normalisation becomes a
+  // no-op rather than a behaviour change — which is what makes it safe to
+  // delete later.
+  const good = PROMO_LIST_PRICE_CENTS;
+  assert.equal(
+    promoPriceCents(listPriceCents(good), DURING),
+    promoPriceCents(listPriceCents(PROMO_SALE_PRICE_CENTS), DURING),
+  );
+  assert.equal(
+    promoPriceCents(listPriceCents(good), AFTER),
+    promoPriceCents(listPriceCents(PROMO_SALE_PRICE_CENTS), AFTER),
+  );
+});
+
+test("India keeps its own list price and its own discount", () => {
+  // 11500 is not the U.S. sale price, so normalisation must not touch it.
+  assert.equal(listPriceCents(IN_LIST), IN_LIST);
+  assert.equal(promoPriceCents(listPriceCents(IN_LIST), DURING), 6900);
+  assert.equal(promoPriceCents(listPriceCents(IN_LIST), AFTER), IN_LIST);
 });

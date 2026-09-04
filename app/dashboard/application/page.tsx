@@ -6,7 +6,7 @@ import { getStudentAccess } from "@/lib/access";
 import { Card, StatusBadge } from "@/components/ui/card";
 import { ButtonLink } from "@/components/ui/button";
 import { getCountryFromHeaders, getRegionalPrice } from "@/lib/pricing";
-import { promoPriceCents } from "@/lib/promo";
+import { promoPriceCents, listPriceCents } from "@/lib/promo";
 import { getPassGrantForUser } from "@/lib/founder-pass";
 import { grantDiscountCents } from "@/lib/founder-pass-tiers";
 import { getRebuildForUser, type Rebuild } from "@/lib/founder-pass-perks";
@@ -74,7 +74,7 @@ export default async function ApplicationPage({
   }
 
   const holdsPass = passGrant !== null;
-  const basePriceCents = app.cohort?.price_cents ?? 13000;
+  const basePriceCents = listPriceCents(app.cohort?.price_cents ?? 13000);
   const country = getCountryFromHeaders(headers());
   const regionalCents = getRegionalPrice(basePriceCents, country).amountCents;
   // The site-wide promotion, applied before the pass discount — the same order

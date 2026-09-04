@@ -6,7 +6,7 @@ import { requireUser, getProfile } from "@/lib/auth";
 import { getStudentAccess } from "@/lib/access";
 import { Card } from "@/components/ui/card";
 import { getCountryFromHeaders, getRegionalPrice } from "@/lib/pricing";
-import { promoPriceCents } from "@/lib/promo";
+import { promoPriceCents, listPriceCents } from "@/lib/promo";
 import {
   passDiscountCentsForUser,
 } from "@/lib/founder-pass";
@@ -59,7 +59,7 @@ export default async function AcceptedPage() {
 
   // Mirror the checkout math exactly (regional price, then the founder-pass
   // discount) so the number here is the number Stripe charges.
-  const basePriceCents = app.cohort?.price_cents ?? 13000;
+  const basePriceCents = listPriceCents(app.cohort?.price_cents ?? 13000);
   const country = getCountryFromHeaders(headers());
   const regionalCents = getRegionalPrice(basePriceCents, country).amountCents;
   // The site-wide promotion, applied before the pass discount — the same order

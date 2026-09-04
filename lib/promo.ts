@@ -40,6 +40,40 @@ export const PROMO_VALID_UNTIL = "2026-09-09";
  */
 export const PROMO_LIST_PRICE_CENTS = 12999;
 
+/**
+ * What this promo charges for its declared list price — $78 off $129.99.
+ * Exported because it is the exact value that was written into
+ * `cohorts.price_cents` by hand, and `listPriceCents()` has to recognise it.
+ */
+export const PROMO_SALE_PRICE_CENTS = 7800;
+
+/**
+ * The LIST price for a cohort row, repairing one known-bad value.
+ *
+ * `cohorts.price_cents` is supposed to hold list price. During this promo it
+ * was set to the SALE price by hand instead, which made the site discount an
+ * already-discounted number. `promoPriceCents()` stops that from producing $47
+ * — but a guard alone is not enough, because it only fixes the price WHILE the
+ * sale runs. On September 10 the promo stops discounting anything, the row
+ * still says 7800, and the price silently stays $78 forever instead of
+ * reverting to $130. That is the failure this function exists to prevent, and
+ * it is the one nobody would notice, because it looks like nothing happened.
+ *
+ * So a row holding exactly the sale price is read as the list price it was
+ * derived from. The site is then correct in BOTH states with no database edit:
+ * $78 while the sale runs, $130 the moment it ends.
+ *
+ * SCOPE, and when to delete this. This is data repair living in code, and it
+ * carries one real cost: a cohort deliberately priced at exactly $78 would be
+ * read as $130. That ambiguity is exactly what the bad row created, and it is
+ * resolved in favour of the overwhelmingly likelier case. Once
+ * `cohorts.price_cents` is back to 12999, this function is dead weight —
+ * delete it, and the tests named for it, along with the promo itself.
+ */
+export function listPriceCents(rowCents: number): number {
+  return rowCents === PROMO_SALE_PRICE_CENTS ? PROMO_LIST_PRICE_CENTS : rowCents;
+}
+
 export type Promo = {
   percent: number;
   /** "Sept 9" — the deadline, for a title tag with ~60 characters to spend. */
