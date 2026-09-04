@@ -157,12 +157,22 @@ function discount(baseCents: number, percent: number): number {
 /**
  * The homepage <title> while the promo runs.
  *
- * Budgeted to 55 characters because Google renders roughly the first 60 of a
- * title and drops the rest. The offer and its deadline lead; the brand stays
- * last, per the convention documented in app/layout.tsx.
+ * Budgeted under 60 characters, which is roughly what Google renders.
+ *
+ * The BRAND leads, which reverses the convention in app/layout.tsx, and the
+ * reason is query intent. That convention exists for discovery searches, where
+ * "batch0" carries no meaning and the page has to be findable by what it is.
+ * This title is aimed at the opposite case — someone typing "batch0" — and
+ * Google is markedly more willing to keep a title whose opening words match the
+ * query it is answering. A title that opens on a discount instead reads as
+ * promotional boilerplate, which is one of the documented triggers for Google
+ * discarding it and writing its own from the page.
+ *
+ * So the offer sits second: still inside the visible window, still the first
+ * thing after the name being searched for, but no longer the opening claim.
  */
 export function promoTitle(promo: Promo): string {
-  return `${promo.percent}% Off Until ${promo.shortDeadline} — Startup Accelerator — batch0`;
+  return `batch0 — ${promo.percent}% Off Until ${promo.shortDeadline} — Startup Accelerator`;
 }
 
 /**

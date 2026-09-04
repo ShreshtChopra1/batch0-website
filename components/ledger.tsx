@@ -28,7 +28,27 @@ export function Ledger({
       : "open — rolling review"
     : "closed";
 
-  const all: [string, string][] =
+  // Tuition is the row a visitor actually stops on, so during a sale it shows
+  // the old price struck through beside the new one — the way a price is
+  // normally marked down. It is also the highest server-rendered mention of
+  // the discount on the page, which matters beyond marketing: Google decides
+  // whether to keep a <title> partly on whether the page corroborates it, and
+  // a title advertising a sale is far more likely to be discarded when the
+  // visible content near the top never mentions one.
+  const tuition: React.ReactNode = derived.isPromoPrice ? (
+    <>
+      <span className="sr-only">was </span>
+      <span className="font-normal text-ink-faint line-through">
+        {derived.listPriceLabel}
+      </span>{" "}
+      <span className="sr-only">now </span>
+      {derived.priceLabel} · {derived.promoPercentLabel}% off
+    </>
+  ) : (
+    `${derived.priceLabel} · charged only if accepted`
+  );
+
+  const all: [string, React.ReactNode][] =
     rows === "strip"
       ? [
           [derived.cohortLabel || "Cohort", `${derived.cohortName}${dates ? ` · ${dates}` : ""}`],
@@ -38,7 +58,7 @@ export function Ledger({
           [derived.cohortLabel || "Cohort", derived.cohortName],
           ["Dates", dates || "TBA"],
           ["Format", "live, online · high schoolers 13–18"],
-          ["Tuition", `${derived.priceLabel} · charged only if accepted`],
+          ["Tuition", tuition],
           ["Equity taken", "none"],
           ["Applications", applicationsValue],
         ];
