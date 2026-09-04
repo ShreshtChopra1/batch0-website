@@ -6,6 +6,7 @@ import { ApplyCta } from "@/components/apply-cta";
 import { WEEKS } from "@/components/curriculum";
 import { getPublicSiteConfig, FALLBACK_COHORT } from "@/lib/site-config";
 import { RegionalPrice } from "@/components/regional-price";
+import { listPriceCents } from "@/lib/promo";
 import {
   SITE,
   ORG_ID,
@@ -149,7 +150,7 @@ export default async function ProgramPage() {
       // Base tuition, not the visitor's regional price: the markup is
       // cached and shared across regions, so it has to state the canonical
       // number. `derived.priceLabel` still drives what the page shows.
-      price: (cohort.priceCents / 100).toFixed(2),
+      price: (listPriceCents(cohort.priceCents) / 100).toFixed(2),
       priceCurrency: "USD",
       category: "Tuition",
       url: `${SITE}/apply`,

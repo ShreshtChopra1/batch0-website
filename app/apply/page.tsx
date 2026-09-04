@@ -14,6 +14,7 @@ import {
 import { ApplicationForm } from "./application-form";
 import { getCountryFromHeaders, getRegionalPrice } from "@/lib/pricing";
 import { getApplicationQuestions } from "@/lib/application-questions";
+import { listPriceCents } from "@/lib/promo";
 
 export const metadata = {
   title: "Apply · batch0",
@@ -221,7 +222,10 @@ export default async function ApplyPage({
     selected?.name ?? settings.active_cohort_name ?? "the next cohort";
   const capacity = selected?.capacity ?? 24;
   const country = getCountryFromHeaders(headers());
-  const regional = getRegionalPrice(selected?.price_cents ?? 13000, country);
+  const regional = getRegionalPrice(
+    listPriceCents(selected?.price_cents ?? 13000),
+    country,
+  );
   const priceDollars = (regional.amountCents / 100).toFixed(0);
   const hasMultiple = cohorts.length > 1;
 

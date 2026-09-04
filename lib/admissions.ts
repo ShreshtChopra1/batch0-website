@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { env } from "@/lib/env";
-import { promoPriceCents } from "@/lib/promo";
+import { promoPriceCents, listPriceCents } from "@/lib/promo";
 import { Templates } from "@/lib/email/templates";
 import { sendTemplated, emitEmailEvent } from "@/lib/email/dispatch";
 import { notify } from "@/lib/notifications";
@@ -71,7 +71,7 @@ export async function announceAcceptance(
   // The promo comes off before the pass discount, matching checkout. An
   // acceptance email that quotes list price while Stripe charges the sale
   // price is the one mismatch a student is guaranteed to notice.
-  const saleCents = promoPriceCents(app.listPriceCents);
+  const saleCents = promoPriceCents(listPriceCents(app.listPriceCents));
   const priceCents = Math.max(
     0,
     saleCents - (grant ? grantDiscountCents(grant, saleCents) : 0),

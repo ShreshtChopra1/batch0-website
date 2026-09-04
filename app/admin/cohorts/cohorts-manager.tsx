@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { saveCohort, deleteCohort, type CohortInput } from "./actions";
 import { Pencil, Trash2, Plus, Activity, Flag, Megaphone } from "lucide-react";
 import { getActionError } from "@/lib/action-error";
+import { activePromo, promoPriceCents } from "@/lib/promo";
 
 type Cohort = CohortInput & {
   id: string;
@@ -228,6 +229,9 @@ function CohortForm({
   error?: string;
 }) {
   const [c, setC] = useState<CohortInput>(initial);
+  // Resolved once per render rather than per keystroke; the promo only changes
+  // at its deadline, and the editor is not open across it.
+  const promo = activePromo();
   return (
     <form
       onSubmit={(e) => {
@@ -315,7 +319,27 @@ function CohortForm({
             onChange={(e) =>
               setC({ ...c, price_cents: parseInt(e.target.value) || 0 })
             }
+            aria-describedby={promo ? "price_cents-promo" : undefined}
           />
+          {/* This field is LIST price. While a promotion is running the site
+              discounts it again at render and at checkout, so typing the sale
+              price here charges the discount twice — entering 7800 during a
+              40%-off sale billed $47, not $78, and nothing on this screen said
+              so. Showing the resulting price live is what makes that visible
+              at the moment of entry rather than on the live site. */}
+          {promo && (
+            <p
+              id="price_cents-promo"
+              className="mt-1.5 text-xs leading-relaxed text-ink-faint"
+            >
+              Enter <strong>list</strong> price. {promo.percent}% off is applied
+              automatically until {promo.longDeadline} — students are charged{" "}
+              <strong className="text-ink">
+                ${(promoPriceCents(c.price_cents) / 100).toFixed(0)}
+              </strong>
+              {" "}at this list price.
+            </p>
+          )}
         </div>
         <div>
           <Label htmlFor="status">Status</Label>

@@ -5,7 +5,7 @@ import { stripe } from "@/lib/stripe";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { env } from "@/lib/env";
 import { getCountryFromHeaders, getRegionalPrice } from "@/lib/pricing";
-import { activePromo, promoPriceCents } from "@/lib/promo";
+import { activePromo, promoPriceCents, listPriceCents } from "@/lib/promo";
 import { grantDiscountCents } from "@/lib/founder-pass-tiers";
 import { getPassGrantForUser } from "@/lib/founder-pass";
 import {
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const basePriceCents = app.cohort?.price_cents ?? 13000;
+  const basePriceCents = listPriceCents(app.cohort?.price_cents ?? 13000);
   const cohortName = app.cohort?.name ?? "batch0 cohort";
   const stripePriceId: string | null = app.cohort?.stripe_price_id ?? null;
 
