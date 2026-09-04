@@ -30,6 +30,16 @@ export const PROMO_PERCENT = 40;
  */
 export const PROMO_VALID_UNTIL = "2026-09-09";
 
+/**
+ * The list tuition this promotion was declared against, in cents — the value
+ * `cohorts.price_cents` is expected to hold while the sale runs.
+ *
+ * Used only by the fail-safe in `promoPriceCents()`; the discount itself is
+ * computed from whatever base it is handed, so regional prices still get the
+ * full percentage. Update it alongside a genuine change to list price.
+ */
+export const PROMO_LIST_PRICE_CENTS = 12999;
+
 export type Promo = {
   percent: number;
   /** "Sept 9" — the deadline, for a title tag with ~60 characters to spend. */
@@ -63,11 +73,8 @@ export function activePromo(now: Date = new Date()): Promo | null {
 /**
  * What this promo charges for a given list price, in cents.
  *
- * Rounded to a whole dollar because every price the site quotes is whole
- * dollars: 40% off the $129.99 list is $77.994, and billing that literally
- * would put "$77.99" on a card statement under a headline promising "$78".
- * Rounding here means the number advertised and the number charged are the
- * same number, which is the entire point of computing this in one place.
+ * Rounded to whole dollars, so the number advertised and the number charged
+ * are the same number — the entire point of computing this in one place.
  *
  * Applied on top of regional pricing, never inside it — see lib/pricing.ts.
  * That ordering is what makes the discount reach every region equally
@@ -80,8 +87,37 @@ export function activePromo(now: Date = new Date()): Promo | null {
 export function promoPriceCents(baseCents: number, now: Date = new Date()): number {
   const promo = activePromo(now);
   if (!promo) return baseCents;
-  const discounted = (baseCents * (100 - promo.percent)) / 100;
-  return Math.round(discounted / 100) * 100;
+
+  // Fail safe against a list price that has already had the sale applied to
+  // it. The cohorts.price_cents row is supposed to hold LIST price, and this
+  // function is what discounts it — but the row is hand-edited in an admin
+  // form, and someone entering the sale price there instead is not a
+  // hypothetical: it happened, and it billed $47 (40% off $78) under a
+  // headline promising $78.
+  //
+  // A base at or below what this promo charges for its declared list price has
+  // almost certainly been discounted already, so it is charged as-is. That
+  // makes the wrong row produce the RIGHT price rather than a doubled discount
+  // — and because display and checkout both come through here, the two can
+  // still never disagree.
+  //
+  // The tradeoff is deliberate: a cohort genuinely priced below the sale price
+  // does not receive the promo. That errs toward charging list, which is
+  // recoverable, over charging half of a discount nobody authorised.
+  if (baseCents <= discount(PROMO_LIST_PRICE_CENTS, promo.percent)) {
+    return baseCents;
+  }
+
+  return discount(baseCents, promo.percent);
+}
+
+/**
+ * Whole-dollar sale price. Rounded because every price the site quotes is
+ * whole dollars: 40% off $129.99 is $77.994, and billing that literally would
+ * put "$77.99" on a card statement under a headline promising "$78".
+ */
+function discount(baseCents: number, percent: number): number {
+  return Math.round((baseCents * (100 - percent)) / 100 / 100) * 100;
 }
 
 /**
