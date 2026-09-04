@@ -5,7 +5,7 @@ import {
   createPublicReadClient,
 } from "@/lib/supabase/admin";
 import { getRegionalPrice } from "@/lib/pricing";
-import { activePromo, promoPriceCents } from "@/lib/promo";
+import { activePromo, promoPriceCents, listPriceCents } from "@/lib/promo";
 import {
   buildMetaDescription,
   formatApplyBy,
@@ -222,7 +222,9 @@ function derive(
   const cohortHeadline = cohortLabel
     ? `${cohortLabel} · ${cohortName}`
     : cohortName;
-  const baseCents = c.priceCents ?? 0;
+  // Normalised: the cohort row was hand-set to the sale price, so it is read
+  // back as the list price it came from. See listPriceCents().
+  const baseCents = listPriceCents(c.priceCents ?? 0);
   const regional = getRegionalPrice(baseCents, countryCode);
 
   // The promotion is the LAST thing applied to a price, on top of the regional
