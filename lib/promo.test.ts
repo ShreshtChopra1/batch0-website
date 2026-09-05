@@ -97,9 +97,18 @@ test("the title fits inside what Google renders", () => {
     [...title].length <= 60,
     `title is ${[...title].length} chars: ${title}`,
   );
+  // The brand leads because this title answers the query "batch0", and Google
+  // keeps titles whose opening words match the query far more readily than
+  // ones that open on a discount. The offer still has to be in there, and
+  // still has to land inside the visible window.
+  assert.ok(title.startsWith("batch0"), "a brand query wants the brand first");
   assert.ok(
-    title.startsWith(`${PROMO_PERCENT}% Off`),
-    "the offer has to lead, or truncation eats it",
+    title.includes(`${PROMO_PERCENT}% Off`),
+    "the offer must survive in the title",
+  );
+  assert.ok(
+    [...title].indexOf("%") < 60,
+    "the offer must fall inside what Google renders",
   );
 });
 
