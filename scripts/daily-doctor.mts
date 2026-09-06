@@ -43,6 +43,13 @@ function env(name: string): string {
 const KEY = env("DAILY_API_KEY");
 const DOMAIN = env("NEXT_PUBLIC_DAILY_DOMAIN");
 
+// Mirror the app's paid-feature gating (lib/env.ts). Both default OFF so the
+// doctor exercises the exact room/token an account with no payment method
+// gets — if it forced these on, it would fail against a free account that runs
+// webinars fine, which is the opposite of proving the integration works.
+const RECORDING = process.env.DAILY_ENABLE_RECORDING === "true";
+const LARGE_CALLS = process.env.DAILY_LARGE_CALLS === "true";
+
 async function call<T>(
   path: string,
   init: { method: string; body?: unknown } = { method: "GET" },
@@ -118,12 +125,19 @@ async function main() {
           enable_screenshare: true,
           enable_chat: true,
           enable_prejoin_ui: false,
-          experimental_optimize_large_calls: true,
+          // Paid-scale feature — requested only when opted in, exactly as
+          // createRoom() does. `undefined` drops the key from the JSON.
+          experimental_optimize_large_calls: LARGE_CALLS ? true : undefined,
         },
       },
     },
   );
   pass(`created ${room.name}`);
+  info(
+    `paid features: recording ${RECORDING ? "ON" : "off"}, ` +
+      `large-call optimization ${LARGE_CALLS ? "ON" : "off"} ` +
+      "(both require a payment method on the Daily account)",
+  );
   check(room.privacy === "private", "room is private (URL alone can't join)");
 
   const created = await call<{ config: Record<string, any> }>(
@@ -152,7 +166,10 @@ async function main() {
           exp: expiresAt,
           eject_at_token_exp: true,
           ...(isOwner ? {} : { permissions: { hasPresence: false } }),
-          enable_recording: isOwner ? "cloud" : false,
+          // Only a host, and only when recording is opted in — mirrors
+          // mintToken(). Forcing "cloud" here would make the doctor fail to
+          // mint a token on a card-less account whose webinars work fine.
+          ...(isOwner && RECORDING ? { enable_recording: "cloud" as const } : {}),
         },
       },
     });
@@ -180,10 +197,17 @@ async function main() {
     typeof host.exp === "number" && typeof viewer.exp === "number",
     "both tokens expire",
   );
-  check(
-    host.er === "cloud" && !viewer.er,
-    "only the host may start a recording",
-  );
+  if (RECORDING) {
+    check(
+      host.er === "cloud" && !viewer.er,
+      "only the host may start a recording (DAILY_ENABLE_RECORDING=true)",
+    );
+  } else {
+    check(
+      !host.er && !viewer.er,
+      "no recording requested (DAILY_ENABLE_RECORDING unset — works on any plan)",
+    );
+  }
 
   // The audience-privacy guarantee. If this regresses, students can see how
   // many people are watching — the requirement this whole feature hangs on.
