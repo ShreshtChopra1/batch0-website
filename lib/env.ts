@@ -58,6 +58,15 @@ export const env = {
   // default so webinars work on any plan; set DAILY_ENABLE_RECORDING=true once
   // the account is on a plan that includes recording, and hosts can record.
   dailyRecording: process.env.DAILY_ENABLE_RECORDING === "true",
+  // Large-call optimization (`experimental_optimize_large_calls`) is only
+  // needed above 50 participants, and it opts the room into Daily's paid-scale
+  // infrastructure — which an account WITHOUT a payment method rejects with
+  // "account is missing a payment method", failing the whole webinar. batch0's
+  // webinars are far smaller than 50, so this is OFF by default and every
+  // webinar works on any plan. Set DAILY_LARGE_CALLS=true only when the account
+  // has a card on file AND a webinar genuinely expects 50+ viewers. Same shape
+  // as dailyRecording: a paid feature, opt-in, defaulting to "works anywhere".
+  dailyLargeCalls: process.env.DAILY_LARGE_CALLS === "true",
 
   discordBotToken: process.env.DISCORD_BOT_TOKEN,
   discordGuildId: process.env.DISCORD_GUILD_ID,
