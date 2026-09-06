@@ -184,6 +184,23 @@ export const SYSTEM_TEMPLATES: Seed[] = [
     variables: COMMON,
   },
   {
+    key: "nudge.interview",
+    name: "Book your getting-to-know-you interview",
+    description:
+      "The invite to a getting-to-know-you interview — for the “Enrolled in a cohort” audience, in the window before their cohort starts. Send it from the composer; the button drops them on /dashboard/calls, where they propose a time and the team schedules it (migration 0061). Pairs with the student-first request card.",
+    category: "lifecycle",
+    subject: "{{first_name}}, let's book your getting-to-know-you call",
+    preheader: "A short, no-pressure call with the batch0 team before kickoff.",
+    body_html:
+      "<h1>Let's get to know you.</h1><p>Hi {{first_name}},</p><p>Before <strong>{{cohort_name}}</strong> kicks off, we'd love a short, no-pressure video call — just the batch0 team and you. It's a chance to hear what you're building, what you want out of the cohort, and to answer anything on your mind before day one.</p><p>It only takes a minute to set up: pick a time or two that work for you, add a note if there's something you'd like us to know, and we'll confirm the slot. Then it lands in your 1:1 calls, ready to join.</p>",
+    cta_label: "Request your interview",
+    cta_url: "{{site_url}}/dashboard/calls",
+    variables: [
+      ...COMMON,
+      { key: "cohort_name", label: "Cohort name", example: "Cohort 1" },
+    ],
+  },
+  {
     key: "broadcast.promo",
     name: "40% off — enroll by September 9",
     description:
