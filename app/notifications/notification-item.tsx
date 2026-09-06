@@ -13,6 +13,7 @@ import {
   GraduationCap,
   ShieldAlert,
   ChevronRight,
+  Video,
 } from "lucide-react";
 import { markNotificationRead } from "./actions";
 import { formatRelativeTime } from "@/lib/format-time";
@@ -40,6 +41,11 @@ const ICON_BY_TYPE: Record<string, any> = {
   event_created: CalendarDays,
   checkin_submitted: CheckCircle,
   checkin_feedback: MessageSquareText,
+  call_invited: Video,
+  call_response: Video,
+  call_cancelled: Video,
+  interview_requested: Video,
+  interview_declined: Video,
 };
 
 function iconFor(type: string) {
