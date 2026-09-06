@@ -87,9 +87,25 @@ async function call<T>(
     // Deliberately does not echo the response body into the message
     // unfiltered — Daily errors are safe, but this string can reach a client
     // transition via a server action, so keep it short and intentional.
+    //
+    // One Daily error is worth naming, because its raw text sends people
+    // hunting in the wrong place: "account is missing a payment method" does
+    // not mean a *student's* card failed, it means the DAILY account this key
+    // belongs to has no card on file and the room asked for a paid feature
+    // (cloud recording, or large-call scale). The fix is on the account or in
+    // env, never in a user's billing — so say so where it will actually be
+    // read.
+    const paidFeature = /payment method/i.test(text);
     throw new DailyError(
       `Daily ${init.method} ${path} failed (${res.status})${
         text ? `: ${text.slice(0, 200)}` : ""
+      }${
+        paidFeature
+          ? " — the Daily account (DAILY_API_KEY) has no payment method and the" +
+            " room requested a paid feature. Add a card in the Daily dashboard," +
+            " or unset DAILY_ENABLE_RECORDING / DAILY_LARGE_CALLS to stop" +
+            " requesting paid features."
+          : ""
       }`,
       res.status,
     );
@@ -159,9 +175,16 @@ export async function createRoom({
         // set to false: `undefined` keys drop out of the JSON entirely.
         enable_recording:
           enableRecording && env.dailyRecording ? "cloud" : undefined,
-        // Above 50 participants Daily requires this, and it is required for
-        // Prebuilt specifically. Harmless on small calls.
-        experimental_optimize_large_calls: mode === "webinar",
+        // Daily's large-call optimization. Only needed above 50 participants
+        // (Daily requires it there, and Prebuilt requires it for calls that
+        // large) — but it is NOT free: it opts the room into paid-scale
+        // infrastructure, and an account with no payment method rejects room
+        // creation with "account is missing a payment method". batch0 webinars
+        // are nowhere near 50, so it stays off unless env.dailyLargeCalls is
+        // set, exactly like enable_recording above. `undefined` drops the key
+        // out of the JSON entirely, so a small webinar asks for nothing paid.
+        experimental_optimize_large_calls:
+          mode === "webinar" && env.dailyLargeCalls ? true : undefined,
       },
     },
   });
