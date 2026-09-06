@@ -11,17 +11,17 @@ export default function RefundPolicyPage() {
     <>
       <h1 className="text-4xl font-bold tracking-tight">Refund Policy</h1>
       <p className="mt-2 text-sm text-ink-faint">
-        Last updated: May 12, 2026
+        Last updated: September 6, 2026
       </p>
 
       <p>
         We want everyone to be happy with batch0. Here's how refunds work.
       </p>
 
-      <h2>Full refund within 7 days</h2>
+      <h2>Full refund within 48 hours</h2>
       <p>
         If you're not satisfied for any reason, you can request a full
-        refund within 7 days of payment. Email us at{" "}
+        refund within 48 hours of payment. Email us at{" "}
         <a href="mailto:hello@batch0.org">
           hello@batch0.org
         </a>{" "}
@@ -53,7 +53,7 @@ export default function RefundPolicyPage() {
           name: "Refund Policy",
           description:
             "batch0 tuition refund terms — what is refundable, when, and how to request one.",
-          dateModified: "2026-05-12",
+          dateModified: "2026-09-06",
         })}
       />
       <JsonLd
