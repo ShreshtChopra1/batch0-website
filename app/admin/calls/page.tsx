@@ -2,20 +2,23 @@ import { requirePermission } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
 import { CallsPanel } from "@/components/live/calls-panel";
 import { InviteList } from "@/components/live/invite-card";
+import { InterviewRequestsPanel } from "@/components/live/interview-requests-panel";
 import {
   listInvitesForHost,
   listAllInvites,
   listInvitableStudents,
 } from "@/lib/calls";
+import { listOpenInterviewRequests } from "@/lib/interview-requests";
 
 export const metadata = { title: "1:1 calls · Admin" };
 
 export default async function AdminCallsPage() {
   const viewer = await requirePermission("calls.invite");
-  const [mine, all, students] = await Promise.all([
+  const [mine, all, students, interviewRequests] = await Promise.all([
     listInvitesForHost(viewer.profile.id),
     listAllInvites(),
     listInvitableStudents(),
+    listOpenInterviewRequests(),
   ]);
 
   // Everything anyone else has booked. This is the safeguarding view: in a
@@ -37,6 +40,17 @@ export default async function AdminCallsPage() {
       <Card className="mt-6">
         <CallsPanel invites={mine} students={students} />
       </Card>
+
+      <section className="mt-10">
+        <h2 className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-ink-faint">
+          Interview requests
+        </h2>
+        <p className="mb-3 text-sm text-ink-faint">
+          Getting-to-know-you interviews students asked for before kickoff.
+          Scheduling one books it as a 1:1 and emails them the time.
+        </p>
+        <InterviewRequestsPanel requests={interviewRequests} />
+      </section>
 
       <section className="mt-10">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-ink-faint">

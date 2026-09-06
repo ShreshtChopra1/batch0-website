@@ -55,6 +55,13 @@ export const PRE_COHORT_ALLOWED_HREFS = new Set<string>([
   // hid the tab so nobody could tell it existed.
   "/dashboard/announcements",
   "/dashboard/team",
+  // 1:1 calls stay open before kickoff. An enrolled student is invited to a
+  // getting-to-know-you interview in exactly this window — the request lives
+  // on this page, and a staff-sent invite has to have somewhere to land — so
+  // hiding the tab until day one was hiding the one thing pre-cohort calls
+  // are for. The page itself carries no enrollment gate (see the note in
+  // app/dashboard/calls/page.tsx).
+  "/dashboard/calls",
   "/dashboard/billing",
   "/dashboard/referrals",
   "/dashboard/settings",
@@ -76,6 +83,7 @@ const PRE_COHORT_ALLOWED_PREFIXES = [
   "/dashboard/community",
   "/dashboard/announcements",
   "/dashboard/team",
+  "/dashboard/calls",
   "/dashboard/billing",
   "/dashboard/referrals",
   "/dashboard/settings",

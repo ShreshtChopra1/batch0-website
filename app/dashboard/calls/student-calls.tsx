@@ -2,9 +2,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { InviteList } from "@/components/live/invite-card";
+import { InterviewRequestCard } from "@/components/interview-request-card";
 import { getActionError } from "@/lib/action-error";
 import { respondToInvite } from "@/app/calls/actions";
 import type { CallInvite } from "@/lib/live";
+import type { InterviewRequest } from "@/lib/interview-requests";
 
 /**
  * The student's side: invites addressed to them.
@@ -14,7 +16,15 @@ import type { CallInvite } from "@/lib/live";
  * and burying it in a reverse-chronological list of past calls is how it gets
  * missed.
  */
-export function StudentCalls({ invites }: { invites: CallInvite[] }) {
+export function StudentCalls({
+  invites,
+  interviewRequest = null,
+  showInterviewRequest = false,
+}: {
+  invites: CallInvite[];
+  interviewRequest?: InterviewRequest | null;
+  showInterviewRequest?: boolean;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | undefined>();
@@ -49,6 +59,12 @@ export function StudentCalls({ invites }: { invites: CallInvite[] }) {
 
       {error && (
         <p className="mt-4 text-xs text-red-700 dark:text-red-400">{error}</p>
+      )}
+
+      {showInterviewRequest && (
+        <div className="mt-8">
+          <InterviewRequestCard request={interviewRequest} />
+        </div>
       )}
 
       {pendingInvites.length > 0 && (

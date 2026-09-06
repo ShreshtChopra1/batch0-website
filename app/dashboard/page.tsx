@@ -10,6 +10,8 @@ import { FounderPassCard } from "./founder-pass-card";
 import { getPassForUser } from "@/lib/founder-pass";
 import { ChargePayButton } from "@/components/charge-pay-button";
 import { getStudentAccess, type StudentAccess } from "@/lib/access";
+import { getInterviewRequestForStudent } from "@/lib/interview-requests";
+import { InterviewRequestCard } from "@/components/interview-request-card";
 import { fmtDateOnly, PRE_COHORT_ALLOWED_HREFS } from "@/lib/pre-cohort";
 import { ENROLLED_ONLY_HREFS } from "@/lib/nav-config";
 import type { Role } from "@/lib/types";
@@ -161,6 +163,16 @@ export default async function DashboardHome() {
   ).length;
 
   const greeting = profile?.full_name?.split(" ")[0] || "there";
+
+  // Getting-to-know-you interview: a pre-kickoff onboarding step for enrolled
+  // students, so it only surfaces here for an enrolled student before their
+  // cohort starts. Fetched only in that window — everyone else pays for no
+  // extra query. The calls and enrolled pages keep showing a lingering request
+  // past kickoff; the home page doesn't.
+  const showInterviewRequest = preCohort && access.enrolled;
+  const interviewRequest = showInterviewRequest
+    ? await getInterviewRequestForStudent(user.id)
+    : null;
 
   // Status copy + primary action are derived together so the hero feels
   // intentional — no double-card with redundant labels.
@@ -383,6 +395,12 @@ export default async function DashboardHome() {
           </ul>
         </aside>
       </section>
+
+      {showInterviewRequest && (
+        <div className="mt-12">
+          <InterviewRequestCard request={interviewRequest} variant="compact" />
+        </div>
+      )}
 
       {founderPass && (
         <div className="mt-12">
