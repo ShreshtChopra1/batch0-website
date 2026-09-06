@@ -1,4 +1,4 @@
-// The 40%-off tuition promotion.
+// The 10%-off tuition promotion.
 //
 // This module exists so the promo has exactly ONE end date. The previous
 // version of this push was a hand-edited string in the root layout with a
@@ -21,7 +21,7 @@
 export const PROMO_ENDS_AT = "2026-09-09T23:59:59-04:00";
 
 /** Percentage off the list price. Display only — see the note in `Promo`. */
-export const PROMO_PERCENT = 40;
+export const PROMO_PERCENT = 10;
 
 /**
  * schema.org `priceValidUntil` for the Offer node. Exported separately from
@@ -41,9 +41,14 @@ export const PROMO_VALID_UNTIL = "2026-09-09";
 export const PROMO_LIST_PRICE_CENTS = 12999;
 
 /**
- * What this promo charges for its declared list price — $78 off $129.99.
- * Exported because it is the exact value that was written into
- * `cohorts.price_cents` by hand, and `listPriceCents()` has to recognise it.
+ * The exact value that was written into `cohorts.price_cents` by hand — $78,
+ * the sale price of the ORIGINAL 40%-off run of this promo. It is NOT the
+ * current sale price (10% off $129.99 is $117); it is a fixed artifact of the
+ * database row, and `listPriceCents()` / the double-discount guard both key off
+ * it to recognise and repair that row. Do not "update" it to track the current
+ * percent — that would stop it matching the 7800 still sitting in the row.
+ * Retire it only when the row is set back to list price (12999). See
+ * `listPriceCents()`.
  */
 export const PROMO_SALE_PRICE_CENTS = 7800;
 
@@ -112,7 +117,7 @@ export function activePromo(now: Date = new Date()): Promo | null {
  *
  * Applied on top of regional pricing, never inside it — see lib/pricing.ts.
  * That ordering is what makes the discount reach every region equally
- * ($129.99 -> $78 in the U.S., $115 -> $69 in India) without anyone
+ * ($129.99 -> $117 in the U.S., $115 -> $104 in India) without anyone
  * hand-syncing a table.
  *
  * Returns `baseCents` unchanged once the promo has ended, which is what makes
@@ -129,16 +134,19 @@ export function promoPriceCents(baseCents: number, now: Date = new Date()): numb
   // hypothetical: it happened, and it billed $47 (40% off $78) under a
   // headline promising $78.
   //
-  // A base at or below what this promo charges for its declared list price has
-  // almost certainly been discounted already, so it is charged as-is. That
-  // makes the wrong row produce the RIGHT price rather than a doubled discount
-  // — and because display and checkout both come through here, the two can
-  // still never disagree.
+  // The threshold is the fixed $78 the row was actually set to
+  // (PROMO_SALE_PRICE_CENTS), NOT the current promo's sale price. Earlier this
+  // recomputed the sale price from `promo.percent`, which was safe only while
+  // that price sat below every real list price — true at 40% ($78), false at
+  // 10% ($117), where the "sale price" rises above India's $115 list and the
+  // guard would silently cancel a legitimate regional discount. Keying off the
+  // stable bad-row value catches exactly the row that needs repairing and
+  // leaves every genuine price — U.S. or regional — to be discounted.
   //
-  // The tradeoff is deliberate: a cohort genuinely priced below the sale price
-  // does not receive the promo. That errs toward charging list, which is
-  // recoverable, over charging half of a discount nobody authorised.
-  if (baseCents <= discount(PROMO_LIST_PRICE_CENTS, promo.percent)) {
+  // The tradeoff is deliberate: a cohort genuinely priced at or below $78 does
+  // not receive the promo. That errs toward charging list, which is
+  // recoverable, over charging a discount off a number that may already be one.
+  if (baseCents <= PROMO_SALE_PRICE_CENTS) {
     return baseCents;
   }
 
@@ -147,8 +155,8 @@ export function promoPriceCents(baseCents: number, now: Date = new Date()): numb
 
 /**
  * Whole-dollar sale price. Rounded because every price the site quotes is
- * whole dollars: 40% off $129.99 is $77.994, and billing that literally would
- * put "$77.99" on a card statement under a headline promising "$78".
+ * whole dollars: 10% off $129.99 is $116.991, and billing that literally would
+ * put "$116.99" on a card statement under a headline promising "$117".
  */
 function discount(baseCents: number, percent: number): number {
   return Math.round((baseCents * (100 - percent)) / 100 / 100) * 100;

@@ -50,8 +50,8 @@ test("the discount reaches every region proportionally", () => {
   // Applied on top of the regional table rather than inside it, so one sale
   // discounts both without anyone hand-syncing lib/pricing.ts. A regression
   // here is what made India briefly more expensive than the U.S.
-  assert.equal(promoPriceCents(US_LIST, DURING), 7800);
-  assert.equal(promoPriceCents(IN_LIST, DURING), 6900);
+  assert.equal(promoPriceCents(US_LIST, DURING), 11700);
+  assert.equal(promoPriceCents(IN_LIST, DURING), 10400);
   assert.ok(
     promoPriceCents(IN_LIST, DURING) < promoPriceCents(US_LIST, DURING),
     "the PPP-adjusted region must never cost more than the base region",
@@ -59,14 +59,14 @@ test("the discount reaches every region proportionally", () => {
 });
 
 test("a discounted price is always a whole dollar", () => {
-  // 40% off $129.99 is $77.994. Billing that literally puts "$77.99" on a card
-  // statement under a headline promising $78.
+  // 10% off $129.99 is $116.991. Billing that literally puts "$116.99" on a
+  // card statement under a headline promising $117.
   //
-  // Only prices the promo actually discounts are covered: a base below the
-  // guard's floor is returned untouched, cents and all, because passing it
+  // Only prices the promo actually discounts are covered: a base at or below
+  // the guard's floor is returned untouched, cents and all, because passing it
   // through unchanged is the entire point of the guard.
   for (const list of [US_LIST, IN_LIST, 9700, 13000]) {
-    assert.ok(list > PROMO_LIST_PRICE_CENTS * 0.6, `${list} is below the floor`);
+    assert.ok(list > PROMO_SALE_PRICE_CENTS, `${list} is below the floor`);
     assert.equal(
       promoPriceCents(list, DURING) % 100,
       0,
@@ -114,11 +114,11 @@ test("the title fits inside what Google renders", () => {
 
 test("the meta description quotes two different prices", () => {
   const promo = activePromo(DURING)!;
-  const desc = promoMetaDescription(promo, "$78", "$130");
+  const desc = promoMetaDescription(promo, "$117", "$130");
   // Regression: this once rendered "tuition is $130, not $130" because the
   // sale price was read from a field holding the LIST price. Typechecking
   // cannot catch it — both arguments are strings.
-  assert.match(desc, /\$78, not \$130/);
+  assert.match(desc, /\$117, not \$130/);
   assert.ok(
     [...desc].length <= 160,
     `description is ${[...desc].length} chars and will be truncated`,
@@ -136,39 +136,43 @@ test("the deadline constant carries an explicit timezone offset", () => {
 // The double-discount guard
 // ---------------------------------------------------------------------------
 
-test("a row already holding the sale price is not discounted twice", () => {
+test("the row's hand-entered $78 value is not discounted a second time", () => {
   // The regression this exists for: cohorts.price_cents is meant to hold LIST
-  // price, someone entered the sale price in the admin form instead, and the
-  // site discounted it again — billing $47 under a headline promising $78.
-  const sale = promoPriceCents(PROMO_LIST_PRICE_CENTS, DURING);
-  assert.equal(sale, 7800);
+  // price, someone entered the $78 sale price of the original 40% run in the
+  // admin form instead, and the site discounted it again — billing $47 under a
+  // headline promising $78. The guard keys off that fixed $78 artifact, so a
+  // base at (or below) it is charged as-is rather than cut again.
   assert.equal(
-    promoPriceCents(sale, DURING),
-    sale,
-    "applying the promo to its own output must be a no-op, not a second cut",
+    promoPriceCents(PROMO_SALE_PRICE_CENTS, DURING),
+    PROMO_SALE_PRICE_CENTS,
+    "the bad-row value must pass through untouched, not take a second cut",
   );
 });
 
-test("the guard is idempotent for every list price the site uses", () => {
-  for (const list of [US_LIST, IN_LIST, 13000]) {
-    const once = promoPriceCents(list, DURING);
-    const twice = promoPriceCents(once, DURING);
-    assert.equal(twice, once, `${list} was discounted twice`);
-  }
+test("the guard's floor is the fixed $78 value, not the current sale price", () => {
+  // Deliberately NOT the $117 the promo now charges. At 10% that price sits
+  // ABOVE India's $115 list, so a floor at the sale price would swallow a real
+  // regional discount (see the regional test below). Keying off the stable $78
+  // artifact keeps the floor low enough that every genuine price is discounted.
+  assert.equal(promoPriceCents(PROMO_SALE_PRICE_CENTS, DURING), 7800);
+  // A dollar above the floor is a genuine price and gets the promo.
+  assert.equal(promoPriceCents(7900, DURING), 7100);
 });
 
 test("the guard errs toward list price, never toward a partial discount", () => {
-  // A cohort genuinely priced below the sale price does not receive the promo.
-  // That is the deliberate tradeoff: charging list is recoverable, charging
-  // half of an unauthorised discount is not.
+  // A cohort genuinely priced at or below the $78 floor does not receive the
+  // promo. That is the deliberate tradeoff: charging list is recoverable,
+  // charging a discount off a number that may already be one is not.
   const belowFloor = 5000;
   assert.equal(promoPriceCents(belowFloor, DURING), belowFloor);
 });
 
 test("the guard never blocks a legitimate regional discount", () => {
-  // India's list price sits above the U.S. sale price, so it must still be
-  // discounted in full — the guard must not quietly cancel regional pricing.
-  assert.equal(promoPriceCents(IN_LIST, DURING), 6900);
+  // India's $115 list sits above the $78 floor, so it must still be discounted
+  // in full — the guard must not quietly cancel regional pricing. This is the
+  // case that broke when the floor tracked the sale price: at 10% the $117
+  // sale price is above $115, and India would have lost its discount.
+  assert.equal(promoPriceCents(IN_LIST, DURING), 10400);
   assert.ok(promoPriceCents(IN_LIST, DURING) < IN_LIST);
 });
 
@@ -187,12 +191,13 @@ test("every other price is passed through untouched", () => {
   }
 });
 
-test("the bad row charges $78 during the sale and $130 after it", () => {
-  // The whole point. cohorts.price_cents holds 7800 — the sale price, written
-  // in by hand. Normalising it back to list means the site is correct in both
-  // states with no database edit at all:
+test("the bad row charges $117 during the sale and $130 after it", () => {
+  // The whole point. cohorts.price_cents holds 7800 — the $78 the row was
+  // hand-set to. Normalising it back to list ($130) means the site is correct
+  // in both states with no database edit at all: $117 (10% off) while the sale
+  // runs, $130 the moment it ends.
   const row = PROMO_SALE_PRICE_CENTS;
-  assert.equal(promoPriceCents(listPriceCents(row), DURING), 7800);
+  assert.equal(promoPriceCents(listPriceCents(row), DURING), 11700);
   assert.equal(promoPriceCents(listPriceCents(row), AFTER), 12999);
 });
 
@@ -212,8 +217,9 @@ test("a correct row behaves identically, so repairing the data changes nothing",
 });
 
 test("India keeps its own list price and its own discount", () => {
-  // 11500 is not the U.S. sale price, so normalisation must not touch it.
+  // 11500 is not the hand-entered $78 row value, so normalisation must not
+  // touch it.
   assert.equal(listPriceCents(IN_LIST), IN_LIST);
-  assert.equal(promoPriceCents(listPriceCents(IN_LIST), DURING), 6900);
+  assert.equal(promoPriceCents(listPriceCents(IN_LIST), DURING), 10400);
   assert.equal(promoPriceCents(listPriceCents(IN_LIST), AFTER), IN_LIST);
 });
